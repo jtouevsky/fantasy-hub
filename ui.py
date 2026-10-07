@@ -249,7 +249,7 @@ class Brand:
         src = self._flogo[t.logo]
         label = esc(t.name)
         if src:
-            cls = "avatar flogo" if src.startswith("data:") else "avatar logo"
+            cls = "avatar flogo" if src.startswith("data:") else "avatar dflogo"      # ESPN default glyphs sit on the team's identity color
             return (f'<span class="{cls}" style="--s:{size}px;--tc:{tc}" role="img" aria-label="{label}" title="{label}">'
                     f'<img src="{src}" alt="" width="{size}" height="{size}" loading="lazy" decoding="async"></span>')
         return f'<span class="avatar" style="--s:{size}px;--tc:{tc}" role="img" aria-label="{label}" title="{label}"><span>{esc(assets.initials(t.name))}</span></span>'

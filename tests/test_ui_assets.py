@@ -119,3 +119,10 @@ def test_no_decorative_color_glows_and_silver_accents_present():
     assert "infinite" not in s.split("silver accents")[1]
     # silver differs by theme: darker graphite-silver for light, brighter cool silver for dark
     assert "#5b6471" in theme.css("Light") and "#f6f8fb" in theme.css("Dark")
+
+
+def test_stylesheet_contains_no_angle_brackets_that_the_html_sanitizer_could_mistake_for_tags():
+    # a literal '<input>' in a comment once made Streamlit's sanitizer drop the ENTIRE <style> block
+    for mode in theme.MODES:
+        body = theme.css(mode)[len("<style>"):-len("</style>")]
+        assert "<" not in body, body[max(body.index("<") - 60, 0): body.index("<") + 40]
