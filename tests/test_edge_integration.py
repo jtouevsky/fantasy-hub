@@ -1,8 +1,10 @@
 import dataclasses
 
 import demo_data
-import trades
-import waivers
+import trading
+import moves
+from season import Season
+from strategy import Strategy
 from edge import apply as eapply
 from edge.engine import EngineResult
 from edge.types import Adjustment, AdjustedProjection
@@ -44,45 +46,50 @@ def test_swaps_that_exist_on_espn_numbers_are_not_labeled_edge():
     assert plan.swaps and plan.swaps[0].from_edge is False                                        # the bye swap is true regardless of edges
 
 
-def test_ros_edge_flows_into_value_model_and_trade_tags_tilt_the_score():
+def test_ros_edge_flows_into_value_model_and_buy_low_tag_shows_in_trade_notes():
     snap = demo_data.build_demo_snapshot()
-    model0 = ValueModel(snap, demo_data.build_demo_free_agents())
+    fas = demo_data.build_demo_free_agents()
+    model0 = ValueModel(snap, fas)
     other = snap.find_team("Kaden")
     get = max(other.roster, key=model0.value)
     give = max(snap.my_team.roster, key=model0.value)
     v_before = model0.value(get)
-    ev0 = trades.evaluate_trade(snap, model0, other, [give], [get])
     _apply(other.roster, {}, ros={get.player_id: 2.0}, tags={get.player_id: [("buy low", "x")]})
-    model1 = ValueModel(snap, demo_data.build_demo_free_agents())
+    model1 = ValueModel(snap, fas)
     assert model1.value(get) > v_before                                                           # +2 pts/game rest of season raises value
-    ev1 = trades.evaluate_trade(snap, model1, other, [give], [get])
-    assert ev1.tag_tilt == trades.TAG_TILT and any("BUY LOW" in n for n in ev1.notes)
-    assert ev0.tag_tilt == 0.0
+    world = trading.make_world(snap, fas, model1, Strategy(), {})
+    ev = trading.evaluate(world, other, [give], [get])
+    assert any("BUY LOW" in n for n in ev.notes)
 
 
-def test_sell_high_player_given_away_scores_better_and_received_scores_worse():
-    snap = demo_data.build_demo_snapshot()
-    model = ValueModel(snap, demo_data.build_demo_free_agents())
-    other = snap.find_team("Kaden")
-    give, get = snap.my_team.roster[0], other.roster[0]
-    base = trades.evaluate_trade(snap, model, other, [give], [get]).score
-    give.tags = [["sell high", "x"]]
-    assert trades.evaluate_trade(snap, model, other, [give], [get]).score == base + trades.TAG_TILT
-    give.tags, get.tags = [], [["sell high", "x"]]
-    assert trades.evaluate_trade(snap, model, other, [give], [get]).score == base - trades.TAG_TILT
-
-
-def test_waiver_reason_leads_with_the_edge_explanation():
+def test_sell_high_tags_show_up_on_both_sides_of_a_trade():
     snap = demo_data.build_demo_snapshot()
     fas = demo_data.build_demo_free_agents()
+    model = ValueModel(snap, fas)
+    other = snap.find_team("Kaden")
+    give, get = snap.my_team.roster[0], other.roster[0]
+    give.tags = [["sell high", "x"]]
+    world = trading.make_world(snap, fas, model, Strategy(), {})
+    assert any("good timing to move him" in n for n in trading.evaluate(world, other, [give], [get]).notes)
+    give.tags, get.tags = [], [["sell high", "x"]]
+    assert any("expect a fade" in n for n in trading.evaluate(world, other, [give], [get]).notes)
+
+
+def test_move_reason_cites_the_edge_explanation():
+    snap = demo_data.build_demo_snapshot()
+    fas = demo_data.build_demo_free_agents()
+    for t in snap.teams:
+        for p in t.roster:
+            p.bye_week = 0
     star = max((p for p in fas if p.position == "RB"), key=lambda p: p.week_proj)
+    star.bye_week = 0
     star.week_proj = star.week_proj + 8
     star.espn_week_proj = star.week_proj - 8
     star.edge = [{"type": "cascade", "delta": 8.0, "reason": "RB1 on IR, he's next up", "source": "x", "confidence": "med", "at": 0}]
     star.tags = [["buy low", "t"]]
     model = ValueModel(snap, fas)
-    sugg = waivers.suggest_add_drops(snap, model, fas)
-    mine = [s for s in sugg if s.add.player_id == star.player_id]
-    assert mine and mine[0].reason.startswith("Edge: RB1 on IR, he's next up")
-    ranks = waivers.rank_free_agents(model, fas)
-    assert next(r for r in ranks if r.player.player_id == star.player_id).tags == ("buy low",)
+    st = Strategy()
+    eng = moves.MoveEngine(snap, Season(snap, model, st, fas), st, fas)
+    ms = eng.find_moves()
+    mine = [m for m in ms.moves if m.add.player_id == star.player_id]
+    assert mine and "RB1 on IR, he's next up" in mine[0].reason

@@ -9,10 +9,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+import acceptance as acceptance_mod
 import db
+import hub as hub_mod
+import moves as moves_mod
 import news as news_mod
-import trades as trades_mod
-import waivers as waivers_mod
+import strategy as strategy_mod
+import trading
 import assets
 from ui import EDGE_LABEL
 from models import LeagueSnapshot, PlayerInfo
@@ -22,7 +25,7 @@ from valuation import ValueModel
 
 MAX_TOOL_ROUNDS = 10
 RECOMMENDATION_TOOLS = {"find_trades": "trade", "evaluate_trade": "trade", "optimize_lineup": "lineup",
-                        "suggest_waiver_moves": "waiver"}
+                        "find_moves": "waiver", "evaluate_move": "waiver"}
 
 
 # ---------------------------------------------------------------------------
@@ -37,27 +40,43 @@ class AgentTools:
                  fetch_free_agents: Callable[[Optional[str], int], list[PlayerInfo]],
                  fetch_news: Optional[Callable[[int, int], list[dict]]] = None,
                  sleeper_index: Optional[SleeperIndex] = None, trending: Optional[dict[str, int]] = None,
-                 db_path: Optional[str] = None, edge=None, events: Optional[list] = None):
+                 db_path: Optional[str] = None, edge=None, events: Optional[list] = None, hub: Optional[hub_mod.Hub] = None):
         self.edge, self.events = edge, events or []
         self.snap, self.model = snap, model
         self.fetch_free_agents, self.fetch_news = fetch_free_agents, fetch_news
         self.index, self.trending, self.db_path = sleeper_index, trending or {}, db_path
         self.logged_explicitly = False
+        self._hub = hub
+
+    @property
+    def hub(self) -> hub_mod.Hub:
+        """The SAME engines the UI uses (built lazily from the free-agent fetcher when no hub was passed, e.g. in tests/demo)."""
+        if self._hub is None:
+            fas = self._fas() + [p for pos in ("K", "D/ST") for p in self.fetch_free_agents(pos, 30)]
+            self._hub = hub_mod.build(self.snap, self.model, fas, self.db_path)
+        return self._hub
 
     # ---- helpers ---------------------------------------------------------
     def _player_row(self, p: PlayerInfo) -> dict:
-        return {
+        """Facts only. No placeholder 'value' numbers (a below-replacement player is never reported as 0.0) and no bye info unless it is this week's."""
+        s = self.hub.season
+        row = {
             "name": p.name, "position": p.position, "nfl_team": p.pro_team, "lineup_slot": p.lineup_slot,
-            "injury_status": p.injury_status, "on_bye_this_week": p.on_bye, "bye_week": p.bye_week or None,
-            "projected_points_this_week": _r(p.week_proj), "points_per_game_so_far": _r(p.actual_ppg),
-            "rest_of_season_value": _r(self.model.value(p), 0),
-            **({"espn_projection": _r(p.espn_week_proj), "edge_adjustment": _r(p.edge_total), "tags": [t[0] for t in p.tags]} if p.has_edge or p.tags else {}),
+            "injury_status": p.injury_status, "projected_points_this_week": _r(p.week_proj), "points_per_game_so_far": _r(p.actual_ppg),
+            "expected_points_rest_of_season": _r(s.raw_ros(p), 0),
         }
+        if p.on_bye:
+            row["on_bye_this_week"] = True
+        if p.injury_status in ("INJURY_RESERVE", "OUT", "SUSPENSION", "DOUBTFUL", "QUESTIONABLE"):
+            row["injury_outlook"] = s.timeline(p).note
+        if p.has_edge or p.tags:
+            row.update({"espn_projection": _r(p.espn_week_proj), "edge_adjustment": _r(p.edge_total), "tags": [t[0] for t in p.tags]})
+        return row
 
     def _team_row(self, t) -> dict:
+        s = self.hub.season
         return {"team_name": t.name, "owner": t.owner_label, "record": t.record, "standing": t.standing,
-                "points_for": _r(t.points_for), "players": [self._player_row(p) for p in sorted(
-                    t.roster, key=lambda p: -self.model.value(p))]}
+                "points_for": _r(t.points_for), "players": [self._player_row(p) for p in sorted(t.roster, key=lambda p: -s.rank_key(p))]}
 
     def _all_players(self) -> list[PlayerInfo]:
         return [p for t in self.snap.teams for p in t.roster]
@@ -93,12 +112,14 @@ class AgentTools:
         positions = [position] if position else sorted({p for p in ("QB", "RB", "WR", "TE", "K", "D/ST")
                                                         if p in self.snap.starter_slots or p in ("RB", "WR", "TE")})
         fas = [p for pos in positions for p in self.fetch_free_agents(pos, 30)]
-        ranks = waivers_mod.rank_free_agents(self.model, fas, self.index, self.trending)
-        ranks.sort(key=lambda r: (-r.ros_value, -r.week_value))
-        return {"free_agents": [{
-            **self._player_row(r.player), "this_week_value": _r(r.week_value), "percent_owned": r.player.percent_owned,
-            "sleeper_trending_adds_24h": r.trending_adds or None, "breakout_flag": r.breakout,
-        } for r in ranks[:max(1, min(limit, 30))]]}
+        s = self.hub.season
+        fas.sort(key=lambda p: -s.rank_key(p))
+        note = "Raw facts for browsing only. To recommend an add, call find_moves or evaluate_move (they apply the roster rules); never build a move from this list."
+        out = []
+        for p in fas[:max(1, min(limit, 30))]:
+            sid = self.index.find(p) if self.index else None
+            out.append({**self._player_row(p), "percent_owned": p.percent_owned, "sleeper_trending_adds_24h": self.trending.get(sid) if sid else None})
+        return {"free_agents": out, "note": note}
 
     def evaluate_trade(self, give: list[str], get: list[str], team_name_or_owner: Optional[str] = None) -> dict:
         give_p = self._resolve_mine(give)
@@ -111,30 +132,76 @@ class AgentTools:
             if len(owners) != 1 or None in owners:
                 raise LookupError("All players you want must be on the same other team; pass team_name_or_owner.")
             other = self.snap.team(owners.pop())
-        ev = trades_mod.evaluate_trade(self.snap, self.model, other, give_p, get_p)
-        return self._trade_row(ev)
+        ev = trading.evaluate(self.hub.world, other, give_p, get_p)
+        ev.ladder = trading.build_ladder(self.hub.world, ev, trading.Constraints(), trading._my_pool(self.hub.world, trading.Constraints()), [])
+        return trading.describe(self.hub.world, ev)
 
-    def find_trades(self, target_team: str, offering: list[str], target_split: float = 60,
-                    want_positions: Optional[list[str]] = None, max_results: int = 5) -> dict:
-        other = self.snap.find_team(target_team)
-        offer = self._resolve_mine(offering)
-        found = trades_mod.find_trades(self.snap, self.model, other, offer, float(target_split),
-                                       {w.upper() for w in want_positions} if want_positions else None,
-                                       max(1, min(max_results, 8)))
-        return {"target_team": other.name, "owner": other.owner_label, "target_split_for_me": target_split,
-                "n_found": len(found), "trades": [self._trade_row(e) for e in found],
-                "note": "Split = share of combined value I get. Acceptance = how likely the other manager says yes."}
+    def find_trades(self, request: str = "", target_team: Optional[str] = None, offering: Optional[list[str]] = None, get: Optional[list[str]] = None,
+                    target_split: Optional[float] = None, want_positions: Optional[list[str]] = None, exclude_give_positions: Optional[list[str]] = None,
+                    need_position: Optional[str] = None, allow_loss: Optional[bool] = None, max_results: int = 5) -> dict:
+        """Whole-league scan unless target_team is given. A free-text `request` is parsed into explicit constraints; explicit arguments override it. The parsed constraints are echoed back."""
+        w = self.hub.world
+        c = trading.parse_request(request, w) if request else trading.Constraints()
+        if target_team:
+            c.partner = self.snap.find_team(target_team).team_id
+        if offering:
+            c.offering = [p.player_id for p in self._resolve_mine(offering)]
+        if get:
+            c.get_ids = [self.snap.find_player(n).player_id for n in get]
+        if target_split is not None:
+            c.target_split = float(target_split)
+        if want_positions:
+            c.want_positions = {x.upper() for x in want_positions}
+        if exclude_give_positions:
+            c.exclude_give_positions = {x.upper() for x in exclude_give_positions}
+        if need_position:
+            c.need_position = need_position.upper()
+        if allow_loss is not None:
+            c.allow_loss = allow_loss
+        c.max_results = max(1, min(max_results, 8))
+        found = trading.search(w, c)
+        return {"parsed_constraints": c.summary(), "parse_notes": c.notes, "n_found": len(found), "trades": [trading.describe(w, e) for e in found],
+                "note": "Two separate questions: should_i_offer uses MY value (my lineup); would_they_accept uses THEIR perception (market value, need, situation, history). Never merge them. "
+                        "Present trades in the order given; quote labels, never invent percentages."}
 
-    def _trade_row(self, ev: trades_mod.TradeEval) -> dict:
-        imp = lambda i: {"weekly_points_change": _r(i.delta), "would_start": i.now_starting,
-                         "moved_to_bench": i.no_longer_starting, "needs_free_pickup_at": i.pickups_needed}
-        return {
-            "type": ev.kind, "other_team": ev.other_team, "i_give": [self._player_row(p) for p in ev.give],
-            "i_get": [self._player_row(p) for p in ev.get], "value_i_get": _r(ev.value_get, 0), "value_i_give": _r(ev.value_give, 0),
-            "split_me_vs_them": f"{ev.my_share:.0f}/{ev.their_share:.0f}", "other_manager_acceptance": ev.acceptance,
-            "my_lineup": imp(ev.mine), "their_lineup": imp(ev.theirs), "notes": ev.notes, "ranking_score": ev.score,
-            "espn_action": f"Open {ev.other_team}'s team in the ESPN app and propose this trade.",
-        }
+    def draft_trade_pitch(self, give: list[str], get: list[str], team_name_or_owner: str) -> dict:
+        other = self.snap.find_team(team_name_or_owner)
+        ev = trading.evaluate(self.hub.world, other, self._resolve_mine(give), [self.snap.find_player(n, other) for n in get])
+        return {"message": trading.pitch(self.hub.world, ev), "note": "Draft only; the user sends it themselves. Nothing is sent automatically."}
+
+    def log_negotiation(self, manager: str, offer: dict, response: str, note: str = "") -> dict:
+        """Record how a manager actually responded ('accepted' | 'rejected' | 'countered' | 'no response'). offer = {give: [my player names], get: [their player names]}."""
+        other = self.snap.find_team(manager)
+        give = self._resolve_mine(offer.get("give", []))
+        get = [self.snap.find_player(n, other) for n in offer.get("get", [])]
+        nid = acceptance_mod.log_negotiation(self.db_path, other.team_id, other.owner_label or other.name, give, get, response, note)
+        return {"logged": True, "id": nid, "note": "Future 'would they accept' estimates for this manager now use this result."}
+
+    def get_manager_profile(self, manager: str) -> dict:
+        other = self.snap.find_team(manager)
+        prof = acceptance_mod.manager_profile(self.db_path, other, self.hub.world.stats, self.hub.market)
+        return {"team": other.name, "owner": other.owner_label, **prof}
+
+    def get_strategy(self) -> dict:
+        from dataclasses import asdict
+        s = self.hub.strategy
+        return {**asdict(s), "streaming_positions": sorted(s.streaming), "roster_caps": s.caps(self.snap.starter_slots)}
+
+    def find_moves(self, max_moves: int = 3) -> dict:
+        """THE source of add/drop and streaming recommendations (also what the Waivers page shows). 'No move needed' is a valid result."""
+        ms = self.hub.moves.find_moves(max(1, min(int(max_moves), 3)))
+        return {**ms.to_dict(), "note": "Recommend ONLY what is listed here, in this order. Streaming picks are decided on THIS week's matchup; if no_move_needed is true, say so plainly."}
+
+    def evaluate_move(self, add: str, drop: Optional[str] = None) -> dict:
+        """Check one specific add/drop against the roster rules and the gain thresholds."""
+        eng = self.hub.moves
+        pool = {p.name.lower(): p for p in self._fas() + [x for pos in ("K", "D/ST") for x in self.fetch_free_agents(pos, 30)]}
+        a = pool.get(add.lower()) or next((p for p in pool.values() if add.lower() in p.name.lower()), None)
+        if a is None:
+            raise LookupError(f"Couldn't find free agent '{add}'.")
+        d = self.snap.find_player(drop, self.snap.my_team) if drop else None
+        m = eng.evaluate_move(a, d)
+        return {**m.to_dict(), "allowed": m.ok, "blocked_because": m.blocked}
 
     def optimize_lineup(self) -> dict:
         plan = plan_lineup(self.snap.my_team.roster, self.snap.starter_slots)
@@ -144,16 +211,6 @@ class AgentTools:
                 "current_projected_total": plan.current_total, "optimal_projected_total": plan.optimal_total,
                 "gain": _r(plan.gain), "swaps": [{"gain": s.gain, "action": s.action(), "reason": s.reason} for s in plan.swaps],
                 "warnings": plan.warnings}
-
-    def suggest_waiver_moves(self, max_results: int = 5) -> dict:
-        positions = ["QB", "RB", "WR", "TE", "D/ST", "K"]
-        fas = [p for pos in positions if pos in self.snap.starter_slots or pos in ("RB", "WR", "TE")
-               for p in self.fetch_free_agents(pos, 30)]
-        sugg = waivers_mod.suggest_add_drops(self.snap, self.model, fas, self.index, self.trending, max_results)
-        return {"suggestions": [{
-            "add": self._player_row(s.add), "drop": s.drop.name, "points_per_week_gain_rest_of_season": s.ppg_gain,
-            "points_gain_this_week": s.weekly_gain, "sleeper_trending_adds_24h": s.trending_adds or None,
-            "reason": s.reason, "espn_action": s.action()} for s in sugg]}
 
     def get_player_news(self, player: str) -> dict:
         if self.fetch_news is None:
@@ -235,9 +292,9 @@ class AgentTools:
             for tag, why in p.tags:
                 t = owners.get(p.player_id)
                 out[key[tag]].append({"name": p.name, "position": p.position, "nfl_team": p.pro_team, "on": ("my team" if t and t.team_id == self.snap.my_team_id else t.name if t else "free agent"),
-                                      "why": why, "rest_of_season_value": _r(self.model.value(p), 0)})
+                                      "why": why, "expected_points_rest_of_season": _r(self.hub.season.raw_ros(p), 0)})
         for k in out:
-            out[k] = sorted(out[k], key=lambda r: -r["rest_of_season_value"])[:10]
+            out[k] = sorted(out[k], key=lambda r: -r["expected_points_rest_of_season"])[:10]
         out["note"] = ("Backtest (2025): buy-low players beat their baseline by ~2 points the next game, sell-high players fell short by ~4. "
                        "'Role growing' was NOT predictive on its own - treat it as context only.")
         return out
@@ -267,6 +324,9 @@ class AgentTools:
                 "weather_note": env.weather_note, "forecast_as_of": _dt.datetime.fromtimestamp(env.forecast_at).isoformat(timespec="minutes") if env.forecast_at and env.wind_mph is not None else None,
                 "positive_spread_means": f"{env.team} favored"}
 
+    def strategy_text(self) -> str:
+        return strategy_mod.prompt_block(self.hub.strategy, self.snap.starter_slots, self.snap.week)
+
     def log_recommendation(self, kind: str, summary: str, details: Optional[dict] = None) -> dict:
         rid = db.log_recommendation(kind, summary, details, self.snap.week, "agent", self.db_path)
         self.logged_explicitly = True
@@ -295,16 +355,26 @@ TOOLS: list[dict] = [
      "input_schema": {"type": "object", "properties": {"team_name_or_owner": _STR}, "required": ["team_name_or_owner"]}},
     {"name": "get_free_agents", "description": "Best available free agents ranked by rest-of-season value, with Sleeper trending adds. Optionally filter by position (QB/RB/WR/TE/D/ST/K).",
      "input_schema": {"type": "object", "properties": {"position": _STR, "limit": {"type": "integer"}}}},
-    {"name": "evaluate_trade", "description": "Evaluate a specific trade: value each side gets, the fairness split, and how each team's starting lineup changes. 'give' = my players, 'get' = their players.",
+    {"name": "evaluate_trade", "description": "Evaluate one specific trade. Returns two SEPARATE answers: should_i_offer (my value and lineup change, week by week) and would_they_accept (market value, need, situation, history; a label plus reasons), plus risk and an offer ladder (Open/Fair/Walk away). 'give' = my players, 'get' = their players.",
      "input_schema": {"type": "object", "properties": {"give": _STRS, "get": _STRS, "team_name_or_owner": _STR}, "required": ["give", "get"]}},
-    {"name": "find_trades", "description": "Search 1-for-1, 2-for-1 and 1-for-2 packages with a target team that include my offered player(s). target_split is MY share of the value (60 = slightly in my favor). Favors deals the other manager would accept.",
-     "input_schema": {"type": "object", "properties": {"target_team": _STR, "offering": _STRS, "target_split": {"type": "number"},
-                                                        "want_positions": _STRS, "max_results": {"type": "integer"}},
-                      "required": ["target_team", "offering"]}},
+    {"name": "find_trades", "description": "Search the WHOLE league (or one team) for trades, cheapest winning offer first (1-for-1 before 2-for-1, no unneeded sweeteners). Pass the user's plain-English words in `request` (e.g. 'a WR for the playoffs without giving up an RB, 60/40') and/or explicit arguments; the parsed constraints are returned so they can be shown and corrected.",
+     "input_schema": {"type": "object", "properties": {"request": _STR, "target_team": _STR, "offering": _STRS, "get": _STRS, "target_split": {"type": "number"},
+                                                        "want_positions": _STRS, "exclude_give_positions": _STRS, "need_position": _STR, "allow_loss": {"type": "boolean"},
+                                                        "max_results": {"type": "integer"}}}},
+    {"name": "draft_trade_pitch", "description": "Draft a short, casual message to the other manager highlighting what THEY gain. Never sent automatically; the user sends it.",
+     "input_schema": {"type": "object", "properties": {"give": _STRS, "get": _STRS, "team_name_or_owner": _STR}, "required": ["give", "get", "team_name_or_owner"]}},
+    {"name": "log_negotiation", "description": "Record how a manager really responded to an offer so future 'would they accept' estimates improve. response: accepted | rejected | countered | no response. offer = {give: [my player names], get: [their player names]}.",
+     "input_schema": {"type": "object", "properties": {"manager": _STR, "offer": {"type": "object", "properties": {"give": _STRS, "get": _STRS}}, "response": _STR, "note": _STR}, "required": ["manager", "offer", "response"]}},
+    {"name": "get_manager_profile", "description": "A manager's trade tendencies: logged negotiations, league activity (trades/adds), and what they have said yes/no to.",
+     "input_schema": {"type": "object", "properties": {"manager": _STR}, "required": ["manager"]}},
+    {"name": "get_strategy", "description": "My strategy settings: streaming positions, roster caps, thresholds, recently-added protection.",
+     "input_schema": {"type": "object", "properties": {}}},
     {"name": "optimize_lineup", "description": "Best starting lineup for this week vs my current lineup, with each swap's projected gain.",
      "input_schema": {"type": "object", "properties": {}}},
-    {"name": "suggest_waiver_moves", "description": "Specific add/drop suggestions from the waiver wire with projected gains.",
-     "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}}}},
+    {"name": "find_moves", "description": "THE ONLY source of add/drop and streaming recommendations (the Waivers page uses the same engine). Applies my strategy, roster caps, recently-added protection and projection sanity checks. Returns at most 3 ranked moves with this-week gain, rest-of-season gain, a one-line reason and confidence, plus streaming picks. no_move_needed=true is a valid answer.",
+     "input_schema": {"type": "object", "properties": {"max_moves": {"type": "integer"}}}},
+    {"name": "evaluate_move", "description": "Check one specific add/drop against the roster rules and gain thresholds; returns allowed true/false with the reasons it is blocked.",
+     "input_schema": {"type": "object", "properties": {"add": _STR, "drop": _STR}, "required": ["add"]}},
     {"name": "get_player_news", "description": "Recent ESPN news and Sleeper injury details for one player.",
      "input_schema": {"type": "object", "properties": {"player": _STR}, "required": ["player"]}},
     {"name": "get_edges", "description": "The edge engine's adjustments on top of ESPN's projection (ESPN -> adjusted), each with plain-English reason, source, confidence and the uncapped size. Pass a player name, a fantasy team/owner (e.g. 'Kaden'), or an NFL team (e.g. 'KC'). week defaults to the current week.",
@@ -325,22 +395,24 @@ TOOL_NAMES = {t["name"] for t in TOOLS}
 # ---------------------------------------------------------------------------
 # System prompt + loop
 # ---------------------------------------------------------------------------
-def system_prompt(snap: LeagueSnapshot) -> str:
+def system_prompt(snap: LeagueSnapshot, strategy_text: str = "") -> str:
     me = snap.my_team
-    return f"""You are a fantasy football assistant for one person who is new to football and plays in an ESPN league. They want you to do the thinking for them.
+    return f"""You are a fantasy football assistant for one person who plays in an ESPN league. They want you to do the thinking for them.
 
 League: {snap.league_name}. It is week {snap.week} of the {snap.year} season. Their team is "{me.name}" (owner {me.owner_label}), record {me.record}.
 Starting slots: {', '.join(f'{n}x {s}' for s, n in snap.starter_slots.items())}; {snap.bench_slots} bench spots. Scoring: {snap.scoring_notes}.
+{strategy_text}
 
 Rules you must follow:
-1. NEVER state a stat, projection, value, record, or injury status that did not come from a tool result in this conversation. If you need a number, call a tool. If tools can't answer, say so.
-2. Use tools for anything about rosters, players, trades, the waiver wire, news, or the lineup. Team lookups work by owner first name (e.g. "Kaden").
-3. Explain in plain English. Assume the user doesn't know football jargon: explain terms like FLEX, bye week, waiver claim in a few words the first time. Describe "value" as "how many more points than a free replacement player over the rest of the season".
-4. For trade requests: call find_trades (or evaluate_trade for a specific deal) and present the best 1-3 options. For each, say who is given/received, the value split, how each team's lineup changes, and why the other manager might accept. If the user names a split like 60/40, use it as target_split (60 = in their favor). Mention if a trade needs a drop or a waiver pickup. If none are good, say so honestly.
-5. You are READ-ONLY. You cannot make moves. End every recommendation with a line starting "Do this in the ESPN app:" saying exactly what to tap/propose.
-6. Call log_recommendation once for each concrete recommendation you make (trade, lineup change, waiver move). Write your COMPLETE answer as plain text in your final message; never leave the explanation only in a message that also calls a tool.
-7. EDGES: projections you see may be "adjusted" = ESPN's number plus edge-engine adjustments (injury cascades, game environment, weather, opposing-defense/OL injuries, opportunity-vs-production tags). When a recommendation depends on an adjustment, call get_edges and CITE it: give ESPN's number, the adjusted number, which adjustment drove it, its size, its source and confidence. If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link when you use one. injury-cascade estimates are context only (backtest: no accuracy gain) - never present them as part of a projection; buy-low/sell-high tags were validated in a backtest; "role growing" was not.
-8. Be concise. Lead with the answer, then the reasoning. Flag uncertainty (questionable injuries, trending news)."""
+1. NEVER state a stat, projection, value, record, or injury status that did not come from a tool result in this conversation. Cite the tool output you rely on.
+2. ADD/DROP and STREAMING: call find_moves (or evaluate_move for a specific idea) and recommend ONLY what it returns, in its order. You do no valuation of your own: never assemble a move from get_free_agents, never quote a "value" of 0.0, never mention bye weeks unless it is this week's, never suggest a position the strategy caps or a player added within the protection window. If find_moves says no_move_needed, answer "No move needed" with its one-line reason; that is a good answer.
+3. Format for moves: at most 3, ranked. Each: Add X / Drop Y; this-week gain; rest-of-season gain; ONE line of reason; confidence (high/medium/low). Mark speculative ones as such. For streaming, say "keep your current D/ST" when the tool says swap=false.
+4. TRADES: call find_trades (whole league by default; pass the user's words as `request`) or evaluate_trade. Always answer TWO separate questions and never blend them: (a) should the user offer it (their value and lineup, week by week) and (b) would the other manager accept (market value, need, situation, history; use the label likely / coin flip / unlikely and the listed reasons; never invent percentages). Include the offer ladder (Open/Fair/Walk away), the risk, and say which constraints you parsed so they can correct them. If none are good, say so.
+5. After any negotiation outcome the user reports, call log_negotiation. Use get_manager_profile before judging how a specific manager will respond.
+6. You are READ-ONLY. You cannot make moves or send messages (draft_trade_pitch only drafts). End every recommendation with a line starting "Do this in the ESPN app:".
+7. Call log_recommendation once for each concrete recommendation (including a 'no move needed' answer). Your FINAL message must be the complete answer in plain text; never end with only a confirmation that you logged it, and never leave the explanation only in a message that also calls a tool.
+8. EDGES: projections may be "adjusted" (ESPN's number plus edge-engine adjustments). When a recommendation depends on one, call get_edges and CITE it (ESPN number, adjusted number, driver, size, source, confidence). If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link. Injury-cascade estimates are context only; buy-low/sell-high tags were backtested; "role growing" was not.
+9. Be concise and plain. Explanation level is set in the strategy (Short = no definitions; Beginner = define terms briefly). Lead with the answer; flag uncertainty."""
 
 
 @dataclass
@@ -364,7 +436,7 @@ def run_turn(client, model_name: str, tools: AgentTools, history: list[dict], us
              max_tokens: int = 2048) -> TurnResult:
     """One user message -> (possibly many tool rounds) -> final text. `history` is plain JSON-able dicts."""
     messages = list(history) + [{"role": "user", "content": user_text}]
-    system = [{"type": "text", "text": system_prompt(tools.snap), "cache_control": {"type": "ephemeral"}}]
+    system = [{"type": "text", "text": system_prompt(tools.snap, tools.strategy_text()), "cache_control": {"type": "ephemeral"}}]
     trace: list[dict] = []
     tools.logged_explicitly = False
 
@@ -449,7 +521,7 @@ async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional
 
     server = create_sdk_mcp_server(SDK_SERVER, "1.0.0", tools=[make(t) for t in TOOLS])
     options = ClaudeAgentOptions(
-        system_prompt=system_prompt(tools.snap),
+        system_prompt=system_prompt(tools.snap, tools.strategy_text()),
         mcp_servers={SDK_SERVER: server},
         tools=[],                                                    # no built-in file/shell/web tools
         allowed_tools=[f"mcp__{SDK_SERVER}__{t['name']}" for t in TOOLS],
@@ -460,12 +532,15 @@ async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional
         env={"ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": ""},   # force the claude.ai subscription login
     )
     answer_parts: list[str] = []
+    all_texts: list[str] = []
     new_session = session_id
     async for msg in query(prompt=user_text, options=options):
         if isinstance(msg, AssistantMessage):
             turn_text = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock)).strip()
             tool_names = [getattr(b, "name", "") for b in msg.content if b.__class__.__name__ == "ToolUseBlock"]
             only_logging = bool(tool_names) and all(n.endswith("log_recommendation") for n in tool_names)
+            if turn_text:
+                all_texts.append(turn_text)
             if turn_text and (not tool_names or only_logging):
                 answer_parts.append(turn_text)       # the answer may sit in the same message that logs it; keep it
         elif isinstance(msg, ResultMessage):
@@ -475,6 +550,10 @@ async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional
             if not answer_parts and msg.result:
                 answer_parts = [msg.result]
     texts = _final_answer(answer_parts)
+    if len(texts) < 160 and re.search(r"\blogged\b", texts, re.I):          # the model ended with only 'I logged it': recover its real answer from earlier in the turn
+        longer = max((t for t in all_texts if t != texts), key=len, default="")
+        if len(longer) > len(texts):
+            texts = longer
     text = texts
     used = [t["tool"] for t in trace if t["tool"] in RECOMMENDATION_TOOLS and not t["error"]]
     if used and not tools.logged_explicitly:

@@ -7,10 +7,9 @@ import streamlit as st
 
 import news as news_mod
 import ui
-import waivers
 from edge.timing import timing_alerts
 from ctx import Ctx
-from views_common import ai_button, goto_button, html, matchup_state, move_gain
+from views_common import ai_button, goto_button, html, matchup_state, moves_block
 
 
 def render(ctx: Ctx) -> None:
@@ -99,19 +98,9 @@ def render(ctx: Ctx) -> None:
             cards += 1
             html(ui.notice(ui.esc(w), "warn", "warning"))
         try:
-            sugg = waivers.suggest_add_drops(snap, ctx.model, ctx.fas, ctx.index, ctx.trending, 2) if ctx.fas else []
+            cards += moves_block(ctx, "ov", max_moves=1, limit_cards=1, show_empty=False)
         except Exception:
-            sugg = []
-        for i, s in enumerate(sugg[:1]):
-            cards += 1
-            html(b.rec_card(f"Add {s.add.name}, drop {s.drop.name}", ui.esc(s.reason), ic="person_add", gain=move_gain(s)[0], gain_label=move_gain(s)[1],
-                            why=f"{s.add.position} · {s.add.pro_team}" + (" · trending on Sleeper" if s.trending_adds else ""), todo=s.action(),
-                            players=[s.add]))
-            c1, c2, _ = st.columns([2, 2, 3])
-            with c1:
-                goto_button("See waivers", f"ov_wv_{i}", "Players")
-            with c2:
-                ai_button("Ask AI why", f"ov_add_{i}", f"Should I add {s.add.name} and drop {s.drop.name}? Use suggest_waiver_moves and news.", "Waiver move review")
+            pass
         if not cards:
             html(ui.notice("<b>Nothing urgent.</b> Your lineup is set and no waiver move is clearly worth making.", "good", "check_circle"))
 

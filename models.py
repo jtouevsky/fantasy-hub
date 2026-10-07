@@ -38,6 +38,10 @@ class PlayerInfo:
     edge_ros: float = 0.0              # per-game rest-of-season adjustment (points)
     tags: list = field(default_factory=list)       # [(tag, explanation)] e.g. ("buy low", "...")
     context: list = field(default_factory=list)    # informational notes NOT counted in the projection, e.g. an injury cascade [{kind, text, pts}]
+    # --- market + injury timeline (trade engine v2) ---
+    market: dict = field(default_factory=dict)     # ESPN consensus signals: adp, auction, ppr_rank, ros_pos_rank, owned, started
+    return_games: float = -1.0                     # expected additional games missed (from news); -1 = unknown, use status defaults
+    added_ts: float = 0.0                          # epoch seconds when MY team added him (0 = unknown / not recent)
 
     @property
     def edge_total(self) -> float:

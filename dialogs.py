@@ -8,10 +8,9 @@ import assets
 from edge import live as edge_live, usage as edge_usage
 import news as news_mod
 import ui
-import waivers
 from ctx import Ctx
 from optimizer import availability
-from views_common import move_gain
+from views_common import move_card
 
 
 def _team_label(t) -> str:
@@ -120,12 +119,14 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
         elif starting:
             st.html(ui.notice("He's in your starting lineup.", "good", "check_circle"))
     elif owner is None:
-        sugg = waivers.suggest_add_drops(snap, m, [p], ctx.index, ctx.trending, 1) if ctx.fas else []
-        if sugg:
-            s = sugg[0]
-            st.html(b.rec_card(f"Add {p.name}, drop {s.drop.name}", ui.esc(s.reason), ic="person_add", gain=move_gain(s)[0], gain_label=move_gain(s)[1], todo=s.action()))
+        mv = ctx.hub.moves
+        cands = [(mv.evaluate_move(p, d)) for d in mv.drop_candidates(p)]
+        ok = sorted((x for x in cands if x.ok), key=lambda x: -x.score)
+        if ok:
+            move_card(ctx, ok[0], f"sheet{p.player_id}", ask=False)
         else:
-            st.html(ui.notice("Adding him wouldn't clearly improve your lineup this week or for the rest of the season.", "", "info"))
+            why = next((x.blocked[0] for x in cands if x.blocked), "Adding him wouldn't clearly improve your lineup this week or for the rest of the season.")
+            st.html(ui.notice(ui.esc(why), "", "info"))
     else:
         st.html(ui.notice(f"He's on {ui.esc(owner.name)} ({ui.esc(owner.owner_label)}). A trade is the way to get him.", "", "swap_horiz"))
         if st.button(f"Explore a trade with {owner.owner_label.split()[0] if owner.owner_label else owner.name}", icon=":material/swap_horiz:", key="sheet_trade"):

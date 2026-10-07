@@ -7,6 +7,7 @@ import streamlit as st
 
 import db
 import news as news_mod
+import strategy as strategy_mod
 from edge.settings import load_params
 from edge import odds as odds_mod
 import ui
@@ -126,6 +127,44 @@ def _edge_engine(ctx: Ctx) -> None:
         html("".join(ui.news_event_html(ev) for ev in ctx.events[:10]))
 
 
+def _strategy(ctx: Ctx) -> None:
+    cur = ctx.hub.strategy
+    html(ui.notice("These rules apply to <b>every</b> recommendation: the Players page, Overview cards, the player sheet and the AI assistant all use them. "
+                   "Nothing here changes anything on ESPN.", "", "tune"))
+    slots = ctx.snap.starter_slots
+    with st.form("strategy_form"):
+        html(ui.section("Streaming", "pick the best option every week, ranked on THIS week only"))
+        c1, c2, c3 = st.columns(3)
+        dst = c1.toggle("Stream D/ST", value=cur.stream_dst, help="Re-pick the defense every week on matchup (opponent's implied points, turnovers, sacks, wind).")
+        k = c2.toggle("Stream K", value=cur.stream_k, disabled=not slots.get("K"), help="Only matters if your league has a kicker slot." if slots.get("K") else "Your league has no kicker slot.")
+        gain = c3.number_input("Swap only if it gains at least (pts)", 0.0, 10.0, float(cur.stream_swap_gain), 0.5,
+                               help="If the best streamer isn't this much better, the app says 'keep your current D/ST'.")
+        html(ui.section("Roster caps", "extras beyond what you start"))
+        c1, c2, c3 = st.columns(3)
+        mq = c1.number_input("Max QBs", 1, 4, int(cur.max_qb), help="Adding a QB at the cap requires dropping a QB.")
+        mt = c2.number_input("Extra TEs beyond starters", 0, 3, int(cur.max_te_extra))
+        md = c3.number_input("Max D/ST", 1, 3, int(cur.max_dst))
+        html(ui.section("Protection and thresholds"))
+        c1, c2, c3 = st.columns(3)
+        days = c1.number_input("Don't churn players added in the last (days)", 0, 21, int(cur.recent_days))
+        mw = c2.number_input("Minimum gain this week (pts)", 0.0, 10.0, float(cur.min_gain_week), 0.5)
+        mr = c3.number_input("...or minimum rest-of-season gain (pts)", 0.0, 40.0, float(cur.min_gain_ros), 1.0)
+        c1, c2, c3 = st.columns(3)
+        spec = c1.number_input("Extra gain needed for one-week spikes (pts)", 0.0, 10.0, float(cur.speculative_extra_gain), 0.5,
+                               help="When a projection is far above a player's recent level, the move must clear a higher bar and is labelled speculative.")
+        po = c2.number_input("Playoff week weight", 1.0, 3.0, float(cur.playoff_weight), 0.1, help="How much more a fantasy-playoff week counts in rest-of-season values.")
+        ex = c3.segmented_control("Explanations", ["Short", "Beginner"], default=cur.explanation, help="Beginner defines terms like D/ST, IR and bye. Short never does.")
+        if st.form_submit_button("Save strategy", icon=":material/save:"):
+            strategy_mod.save(strategy_mod.Strategy(**{**cur.__dict__, "stream_dst": dst, "stream_k": k, "stream_swap_gain": gain, "max_qb": int(mq), "max_te_extra": int(mt),
+                                                       "max_dst": int(md), "recent_days": int(days), "min_gain_week": mw, "min_gain_ros": mr, "speculative_extra_gain": spec,
+                                                       "playoff_weight": po, "explanation": ex or "Short"}), ctx.cfg.db_path)
+            st.toast("Strategy saved. Recommendations now follow it.")
+            st.rerun()
+    caps = cur.caps(slots)
+    html(f'<div class="fh-ctx">{ui.chip("Slots: " + ", ".join(f"{n}x {kk}" for kk, n in slots.items()), "", "grid_view")}'
+         f'{ui.chip("Caps: " + ", ".join(f"{kk} {v}" for kk, v in caps.items()), "", "lock")}{ui.chip("Streaming: " + (", ".join(sorted(cur.streaming)) or "none"), "", "autorenew")}</div>')
+
+
 def render(ctx: Ctx) -> None:
-    sel = st.segmented_control("More", ["News", "Edge engine", "Recommendation log"], default="News", key="more_sel", label_visibility="collapsed") or "News"
-    {"News": _news, "Edge engine": _edge_engine}.get(sel, _log)(ctx)
+    sel = st.segmented_control("More", ["News", "My strategy", "Edge engine", "Recommendation log"], default="News", key="more_sel", label_visibility="collapsed") or "News"
+    {"News": _news, "My strategy": _strategy, "Edge engine": _edge_engine}.get(sel, _log)(ctx)

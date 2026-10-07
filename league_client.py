@@ -4,6 +4,7 @@ Read-only by design: this wrapper never calls anything that changes a roster.
 """
 from __future__ import annotations
 
+import json
 import time
 from typing import Optional
 
@@ -234,6 +235,24 @@ class LeagueClient:
         raw = self._connect().espn_request.league_get(params={"view": "mSettings"})
         return raw["settings"]["scoringSettings"]["scoringItems"]
 
+    def fetch_market(self, limit: int = 500) -> dict[int, dict]:
+        """ESPN's own consensus signals for the most-owned players (rostered + free agents): what OTHER managers think a player is worth."""
+        league = self._connect()
+        filters = {"players": {"filterStatus": {"value": ["FREEAGENT", "WAIVERS", "ONTEAM"]}, "limit": limit, "sortPercOwned": {"sortPriority": 1, "sortAsc": False}}}
+        data = league.espn_request.league_get(params={"view": "kona_player_info", "scoringPeriodId": league.current_week},
+                                              headers={"x-fantasy-filter": json.dumps(filters)})
+        return parse_market(data.get("players", []))
+
+    def fetch_activity(self, size: int = 200) -> list[dict]:
+        """Recent league transactions: adds, waiver adds, drops and both sides of trades (newest first)."""
+        league = self._connect()
+        out = []
+        for a in league.recent_activity(size=size):
+            for team, action, player, bid in a.actions:
+                out.append({"ts": a.date / 1000.0, "team_id": getattr(team, "team_id", None), "team": getattr(team, "team_name", ""), "action": action,
+                            "player": getattr(player, "name", str(player)), "player_id": getattr(player, "playerId", None), "bid": bid or 0})
+        return out
+
     def fetch_player_news(self, espn_player_id: int, limit: int = 5) -> list[dict]:
         league = self._connect()
         try:
@@ -301,6 +320,37 @@ def get_player_history(client: LeagueClient, player_id: int, force: bool = False
     return hist
 
 
+def parse_market(players: list[dict]) -> dict[int, dict]:
+    """Pure parser for ESPN kona_player_info rows -> {espn_id: market signals}. Missing fields are simply absent (never guessed)."""
+    out: dict[int, dict] = {}
+    for row in players:
+        p = row.get("player") or {}
+        pid = p.get("id")
+        if pid is None:
+            continue
+        o = p.get("ownership") or {}
+        sig: dict = {}
+        if o.get("averageDraftPosition"):
+            sig["adp"] = float(o["averageDraftPosition"])
+        if o.get("auctionValueAverage") is not None:
+            sig["auction"] = float(o["auctionValueAverage"])
+        if o.get("percentOwned") is not None:
+            sig["owned"] = float(o["percentOwned"])
+        if o.get("percentStarted") is not None:
+            sig["started"] = float(o["percentStarted"])
+        ppr = (p.get("draftRanksByRankType") or {}).get("PPR") or {}
+        if ppr.get("rank"):
+            sig["ppr_rank"] = float(ppr["rank"])
+        ranks = (p.get("rankings") or {}).get("0") or []
+        avg = next((r["averageRank"] for r in ranks if r.get("rankType") == "PPR" and r.get("averageRank")), None) or \
+            next((r["averageRank"] for r in ranks if r.get("averageRank")), None)
+        if avg:
+            sig["ros_pos_rank"] = float(avg)                    # expert-consensus rest-of-season rank WITHIN position
+        if sig:
+            out[int(pid)] = sig
+    return out
+
+
 # ---- cached access (what the app calls) -----------------------------------
 def get_snapshot(client: LeagueClient, force: bool = False) -> LeagueSnapshot:
     key = f"snapshot:{client.cfg.league_id}:{client.cfg.year}"
@@ -323,3 +373,32 @@ def get_free_agents(client: LeagueClient, position: Optional[str] = None, size: 
     fas = client.fetch_free_agents(position, size)
     db.cache_set(key, [p.__dict__ for p in fas], client.cfg.db_path)
     return fas
+
+
+def get_market(client: LeagueClient, force: bool = False) -> dict[int, dict]:
+    key = f"market:{client.cfg.league_id}:{client.cfg.year}"
+    if not force:
+        cached = db.cache_get(key, 1800, client.cfg.db_path)
+        if cached is not None:
+            return {int(k): v for k, v in cached.items()}
+    try:
+        m = client.fetch_market()
+    except Exception:
+        stale = db.cache_get(key, 10 ** 9, client.cfg.db_path)
+        return {int(k): v for k, v in (stale or {}).items()}
+    db.cache_set(key, m, client.cfg.db_path)
+    return m
+
+
+def get_activity(client: LeagueClient, force: bool = False) -> list[dict]:
+    key = f"activity:{client.cfg.league_id}:{client.cfg.year}"
+    if not force:
+        cached = db.cache_get(key, 600, client.cfg.db_path)
+        if cached is not None:
+            return cached
+    try:
+        a = client.fetch_activity()
+    except Exception:
+        return db.cache_get(key, 10 ** 9, client.cfg.db_path) or []
+    db.cache_set(key, a, client.cfg.db_path)
+    return a
