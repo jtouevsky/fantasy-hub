@@ -14,6 +14,7 @@ import demo_data
 from config import load_config
 from league_client import LeagueClient, LeagueConnectionError, get_free_agents, get_snapshot
 from models import LeagueSnapshot, PlayerInfo
+from optimizer import availability, plan_lineup
 
 st.set_page_config(page_title="Fantasy Hub", page_icon="🏈", layout="wide")
 
@@ -116,6 +117,35 @@ def render_dashboard(snap: LeagueSnapshot) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Lineup optimizer
+# ---------------------------------------------------------------------------
+def _lineup_frame(rows) -> pd.DataFrame:
+    return pd.DataFrame([{
+        "Slot": slot, "Player": p.name if p else "(empty)", "Pos": p.position if p else "",
+        "Status": _status_label(p) if p else "", "Proj": round(p.week_proj, 1) if p else 0.0,
+        "Risk-adj": round(availability(p), 1) if p else 0.0,
+    } for slot, p in rows])
+
+
+def render_lineup(snap: LeagueSnapshot) -> None:
+    plan = plan_lineup(snap.my_team.roster, snap.starter_slots)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Current lineup", f"{plan.current_total:.1f}")
+    c2.metric("Optimal lineup", f"{plan.optimal_total:.1f}")
+    c3.metric("Gain", f"{plan.gain:+.1f} pts")
+    st.caption("Risk-adjusted: Questionable x0.92, Doubtful x0.5; Out/bye/IR players are never started.")
+    if not plan.swaps:
+        st.success("Your lineup is already optimal. No changes needed.")
+    for s in plan.swaps:
+        st.info(f"**{s.gain:+.1f} pts** - {s.action()}  \n{s.reason}")
+    for w in plan.warnings:
+        st.warning(w)
+    a, b = st.columns(2)
+    a.markdown("#### Current"); a.dataframe(_lineup_frame(plan.current), hide_index=True, width="stretch")
+    b.markdown("#### Optimal"); b.dataframe(_lineup_frame(plan.optimal), hide_index=True, width="stretch")
+
+
+# ---------------------------------------------------------------------------
 # Shell
 # ---------------------------------------------------------------------------
 def render_setup_help(err: str | None = None) -> None:
@@ -165,9 +195,11 @@ def main() -> None:
                + ", ".join(f"{n}× {s}" for s, n in snap.starter_slots.items())
                + f" · {snap.bench_slots} bench")
 
-    (tab_dash,) = st.tabs(["Dashboard"])
+    tab_dash, tab_lineup = st.tabs(["Dashboard", "Lineup"])
     with tab_dash:
         render_dashboard(snap)
+    with tab_lineup:
+        render_lineup(snap)
 
 
 main()
