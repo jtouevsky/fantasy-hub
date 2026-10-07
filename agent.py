@@ -5,6 +5,7 @@ Read-only: no tool can change anything on ESPN; every recommendation ends with a
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -12,6 +13,8 @@ import db
 import news as news_mod
 import trades as trades_mod
 import waivers as waivers_mod
+import assets
+from ui import EDGE_LABEL
 from models import LeagueSnapshot, PlayerInfo
 from optimizer import plan_lineup
 from sleeper import SleeperIndex
@@ -34,7 +37,8 @@ class AgentTools:
                  fetch_free_agents: Callable[[Optional[str], int], list[PlayerInfo]],
                  fetch_news: Optional[Callable[[int, int], list[dict]]] = None,
                  sleeper_index: Optional[SleeperIndex] = None, trending: Optional[dict[str, int]] = None,
-                 db_path: Optional[str] = None):
+                 db_path: Optional[str] = None, edge=None, events: Optional[list] = None):
+        self.edge, self.events = edge, events or []
         self.snap, self.model = snap, model
         self.fetch_free_agents, self.fetch_news = fetch_free_agents, fetch_news
         self.index, self.trending, self.db_path = sleeper_index, trending or {}, db_path
@@ -47,6 +51,7 @@ class AgentTools:
             "injury_status": p.injury_status, "on_bye_this_week": p.on_bye, "bye_week": p.bye_week or None,
             "projected_points_this_week": _r(p.week_proj), "points_per_game_so_far": _r(p.actual_ppg),
             "rest_of_season_value": _r(self.model.value(p), 0),
+            **({"espn_projection": _r(p.espn_week_proj), "edge_adjustment": _r(p.edge_total), "tags": [t[0] for t in p.tags]} if p.has_edge or p.tags else {}),
         }
 
     def _team_row(self, t) -> dict:
@@ -167,6 +172,99 @@ class AgentTools:
                 "news": [{"headline": i.headline, "detail": i.story[:400], "published": i.published, "source": i.source}
                          for i in pn.items[:5]]}
 
+    # ---- edge engine tools ------------------------------------------------------
+    def _need_edge(self):
+        if self.edge is None:
+            raise LookupError("The edge engine isn't running (demo data, or it failed to load), so there are no adjustments - only ESPN's projections.")
+        return self.edge
+
+    def _edge_row(self, p: PlayerInfo) -> dict:
+        return {"name": p.name, "position": p.position, "nfl_team": p.pro_team, "espn_projection": _r(p.espn_week_proj or p.week_proj),
+                "adjusted_projection": _r(p.week_proj), "total_adjustment": _r(p.edge_total),
+                "adjustments": [{"type": a["type"], "label": EDGE_LABEL.get(a["type"], a["type"]), "points": _r(a["delta"]), "uncapped_points": _r(a.get("raw", a["delta"])),
+                                 "reason": a["reason"], "source": a["source"], "confidence": a["confidence"]} for a in sorted(p.edge, key=lambda a: -abs(a["delta"]))],
+                "tags": [{"tag": t[0], "explanation": t[1]} for t in p.tags], "rest_of_season_edge_points_per_game": _r(p.edge_ros, 2),
+                "note": "" if p.edge else "No adjustment: no edge data cleared the noise threshold, or data was missing. ESPN's number is used as is."}
+
+    def get_edges(self, player_or_team: str, week: Optional[int] = None) -> dict:
+        """Adjustments (ESPN -> adjusted) for one player, a fantasy team's roster, or an NFL team's players, with sources and confidence."""
+        e = self._need_edge()
+        if week is not None and week != self.snap.week:
+            raise ValueError(f"Edges are only computed for the current week ({self.snap.week}).")
+        try:
+            return {"week": self.snap.week, "players": [self._edge_row(self.snap.find_player(player_or_team))]}
+        except LookupError as player_err:
+            try:
+                t = self.snap.find_team(player_or_team)
+                ps = sorted(t.roster, key=lambda p: -abs(p.edge_total))
+                return {"week": self.snap.week, "fantasy_team": t.name, "players": [self._edge_row(p) for p in ps if p.has_edge or p.tags][:12],
+                        "note": "Only players with an adjustment or tag are listed; everyone else uses ESPN's number as is."}
+            except LookupError:
+                abbr = self._nfl_abbr(player_or_team)
+                if not abbr:
+                    raise player_err
+                ps = [p for p in self._all_players() if p.pro_team == abbr and (p.has_edge or p.tags)]
+                return {"week": self.snap.week, "nfl_team": abbr, "players": [self._edge_row(p) for p in sorted(ps, key=lambda p: -abs(p.edge_total))][:12]}
+
+    def _nfl_abbr(self, q: str) -> Optional[str]:
+        ql = q.strip().lower()
+        for ab, t in assets.nfl_teams(self.db_path).items():
+            if ql in (ab.lower(), t.name.lower(), t.short.lower()):
+                return ab
+        return None
+
+    def get_injury_cascade(self, team: str) -> dict:
+        """Who is out/questionable on an NFL team, and who inherits the carries/targets (with points and confidence)."""
+        e = self._need_edge()
+        abbr = self._nfl_abbr(team) or team.upper()
+        c = next((c for c in e.cascades if c["team"] == abbr), None)
+        if not c:
+            return {"nfl_team": abbr, "cascade": None, "note": f"No skill-position absences are creating an opportunity shift for {abbr} this week (or the data wasn't available)."}
+        return {"nfl_team": abbr, "absent": c["absent"], "beneficiaries": sorted(c["beneficiaries"], key=lambda b: -abs(b["weekly_pts"]))[:8],
+                "note": "weekly_pts = estimated change in that player's fantasy points from the shifted opportunity (already scaled by the backtest calibration)."}
+
+    def get_buy_low_sell_high(self) -> dict:
+        """Players tagged buy-low / sell-high (expected points vs actual production, last 4 games) across my roster, other teams and free agents."""
+        self._need_edge()
+        out = {"buy_low": [], "sell_high": [], "role_growing": []}
+        key = {"buy low": "buy_low", "sell high": "sell_high", "role growing": "role_growing"}
+        owners = {p.player_id: t for t in self.snap.teams for p in t.roster}
+        for p in list(self._all_players()) + list(self._fas()):
+            for tag, why in p.tags:
+                t = owners.get(p.player_id)
+                out[key[tag]].append({"name": p.name, "position": p.position, "nfl_team": p.pro_team, "on": ("my team" if t and t.team_id == self.snap.my_team_id else t.name if t else "free agent"),
+                                      "why": why, "rest_of_season_value": _r(self.model.value(p), 0)})
+        for k in out:
+            out[k] = sorted(out[k], key=lambda r: -r["rest_of_season_value"])[:10]
+        out["note"] = ("Backtest (2025): buy-low players beat their baseline by ~2 points the next game, sell-high players fell short by ~4. "
+                       "'Role growing' was NOT predictive on its own - treat it as context only.")
+        return out
+
+    def _fas(self) -> list:
+        try:
+            return [p for pos in ("QB", "RB", "WR", "TE") for p in self.fetch_free_agents(pos, 30)]
+        except Exception:
+            return []
+
+    def get_game_environment(self, game: str) -> dict:
+        """Vegas line/total/implied points and weather (with forecast timestamp) for a game: 'KC', 'KC vs BUF', or a team name."""
+        e = self._need_edge()
+        abbrs = []
+        for tok in re.split(r"\s+(?:vs\.?|@|at|v)\s+|,|/|\s{2,}", game.strip(), flags=re.I):
+            ab = self._nfl_abbr(tok) or (tok.strip().upper() if tok.strip().upper() in e.game_env else None)
+            if ab:
+                abbrs.append(ab)
+        if not abbrs:
+            raise LookupError(f"Couldn't find a team in '{game}'. Use an NFL team name or abbreviation, e.g. 'KC' or 'KC vs BUF'.")
+        env = e.game_env.get(abbrs[0])
+        if env is None:
+            return {"team": abbrs[0], "note": "No game this week (bye) or schedule data unavailable."}
+        import datetime as _dt
+        return {"game": f"{env.team} vs {env.opp}", "kickoff_et": env.kickoff, "spread_for_" + env.team: env.spread, "total": env.total, "implied_" + env.team: env.implied, "implied_" + env.opp: env.opp_implied,
+                "lines_source": env.lines_source, "stadium": env.stadium, "roof": env.roof, "wind_mph": env.wind_mph, "temp_f": env.temp_f, "precip_probability_pct": env.precip_prob,
+                "weather_note": env.weather_note, "forecast_as_of": _dt.datetime.fromtimestamp(env.forecast_at).isoformat(timespec="minutes") if env.forecast_at and env.wind_mph is not None else None,
+                "positive_spread_means": f"{env.team} favored"}
+
     def log_recommendation(self, kind: str, summary: str, details: Optional[dict] = None) -> dict:
         rid = db.log_recommendation(kind, summary, details, self.snap.week, "agent", self.db_path)
         self.logged_explicitly = True
@@ -207,6 +305,14 @@ TOOLS: list[dict] = [
      "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}}}},
     {"name": "get_player_news", "description": "Recent ESPN news and Sleeper injury details for one player.",
      "input_schema": {"type": "object", "properties": {"player": _STR}, "required": ["player"]}},
+    {"name": "get_edges", "description": "The edge engine's adjustments on top of ESPN's projection (ESPN -> adjusted), each with plain-English reason, source, confidence and the uncapped size. Pass a player name, a fantasy team/owner (e.g. 'Kaden'), or an NFL team (e.g. 'KC'). week defaults to the current week.",
+     "input_schema": {"type": "object", "properties": {"player_or_team": _STR, "week": {"type": "integer"}}, "required": ["player_or_team"]}},
+    {"name": "get_injury_cascade", "description": "For an NFL team: which skill players are out/questionable and who picks up their carries and targets, with estimated points and confidence.",
+     "input_schema": {"type": "object", "properties": {"team": _STR}, "required": ["team"]}},
+    {"name": "get_buy_low_sell_high", "description": "Players tagged buy-low / sell-high (expected fantasy points vs actual production over 4 games) on my team, other teams and the waiver wire. Use for trades and waivers.",
+     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "get_game_environment", "description": "Vegas spread/total/implied points and weather (with forecast timestamp) for a game. Pass 'KC', 'KC vs BUF' or a team name.",
+     "input_schema": {"type": "object", "properties": {"game": _STR}, "required": ["game"]}},
     {"name": "log_recommendation", "description": "Record a concrete recommendation you are making (so the user can later check whether it was good). Call once per distinct recommendation.",
      "input_schema": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["trade", "lineup", "waiver", "news"]},
                                                         "summary": _STR, "details": {"type": "object"}}, "required": ["kind", "summary"]}},
@@ -231,7 +337,8 @@ Rules you must follow:
 4. For trade requests: call find_trades (or evaluate_trade for a specific deal) and present the best 1-3 options. For each, say who is given/received, the value split, how each team's lineup changes, and why the other manager might accept. If the user names a split like 60/40, use it as target_split (60 = in their favor). Mention if a trade needs a drop or a waiver pickup. If none are good, say so honestly.
 5. You are READ-ONLY. You cannot make moves. End every recommendation with a line starting "Do this in the ESPN app:" saying exactly what to tap/propose.
 6. Call log_recommendation once for each concrete recommendation you make (trade, lineup change, waiver move).
-7. Be concise. Lead with the answer, then the reasoning. Flag uncertainty (questionable injuries, trending news)."""
+7. EDGES: projections you see may be "adjusted" = ESPN's number plus edge-engine adjustments (injury cascades, game environment, weather, opposing-defense/OL injuries, opportunity-vs-production tags). When a recommendation depends on an adjustment, call get_edges and CITE it: give ESPN's number, the adjusted number, which adjustment drove it, its size, its source and confidence. If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link when you use one. buy-low/sell-high tags were validated in a backtest; "role growing" was not.
+8. Be concise. Lead with the answer, then the reasoning. Flag uncertainty (questionable injuries, trending news)."""
 
 
 @dataclass

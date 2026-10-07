@@ -53,10 +53,26 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
         f'<div class="hero-player" style="--tc:{tc}">{b.avatar(p, 120)}<div style="min-width:0"><h2>{ui.esc(p.name)}</h2>'
         f'<div class="fh-ctx" style="margin-top:10px">{ui.chip(p.position, "pos")}<span class="chip plain">{b.logo(p.pro_team, 18)}{ui.esc(team.name)}</span>'
         f'{b.status_chip(p)}{_ownership_chip(ctx, p)}</div></div></div>'
-        f'<div class="kv"><div><b>{"-" if p.on_bye else f"{p.week_proj:.1f}"}</b><small>Week {snap.week} projection</small></div>'
+        f'<div class="kv"><div><b>{"-" if p.on_bye else f"{p.week_proj:.1f}"}</b><small>Week {snap.week} {"ESPN " + format(p.espn_week_proj, ".1f") + " → adjusted" if p.has_edge else "projection"}</small></div>'
         f'<div><b>{m.ppg(p):.1f}</b><small>Points / game (blended)</small></div><div><b>{p.total_points:.1f}</b><small>Season points · {p.games_played} G</small></div>'
         f'<div><b>{m.value(p):.0f}</b><small>Rest-of-season value</small></div></div>')
 
+    if p.has_edge or p.tags:
+        st.html(ui.section("Edge vs ESPN", "adjustments on top of ESPN's projection"))
+        if p.has_edge:
+            st.html(ui.edge_why(p, open_=True))
+        elif p.tags:
+            st.html(ui.notice("No projection adjustment this week for him (no data, or nothing cleared the noise threshold).", "", "info"))
+        for tg, txt in p.tags:
+            st.html(f'<div class="notice"><span class="chip tag">{ui.icon(ui.TAG_ICON.get(tg, "sell"))}{ui.esc(tg)}</span><div>{ui.esc(txt)}</div></div>')
+        if p.edge_ros:
+            st.html(f'<div class="fresh">{ui.icon("calendar_month")}Rest-of-season edge: {p.edge_ros:+.1f} pts/game (feeds trade and waiver value).</div>')
+    elif ctx.edge is not None and p.position in ("QB", "RB", "WR", "TE") and not p.on_bye:
+        st.html(ui.notice("No edge data for this player this week - ESPN's projection is used as is.", "", "info"))
+    if ctx.edge is not None:
+        env = ctx.edge.game_env.get(p.pro_team)
+        if env:
+            st.html(ui.section("Game environment") + ui.game_env_html(env))
     nxt = f"Week {snap.week}: " + (f"vs {p.opponent}, {ui.kick_label(p)}" if p.opponent else ("bye week" if p.on_bye else "no game info")) + (f" · bye is week {p.bye_week}" if p.bye_week else "")
     st.html(ui.section("Fantasy points by game", "your league's scoring"))
     slot = st.empty()
@@ -102,6 +118,8 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
 
     # ---- news ----
     st.html(ui.section("Latest news"))
+    for ev in [e for e in ctx.events if e.get("player_espn_id") == pid][:2]:
+        st.html(ui.news_event_html(ev))
     fetch = ctx.news_fetch()
     if fetch is None:
         st.html(ui.notice("News isn't available in demo mode.", "", "newspaper"))

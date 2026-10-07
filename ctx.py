@@ -94,7 +94,7 @@ class Ctx:
 
     def agent_tools(self) -> agent.AgentTools:
         return agent.AgentTools(self.snap, self.model, lambda pos, n: self.free_agents(pos, n), self.news_fetch(),
-                                self.index, self.trending, self.cfg.db_path)
+                                self.index, self.trending, self.cfg.db_path, self.edge, self.events)
 
     # ---- cross-page actions (callbacks) ----
     @staticmethod
@@ -158,6 +158,11 @@ def load_ctx(force: bool = False) -> Ctx:
             if not p.espn_week_proj:
                 p.espn_week_proj = p.week_proj
         events = news_ai.load_events(db_path=cfg.db_path)
+        try:
+            from edge.engine import current_week_events
+            events = current_week_events(edge_live.get_hist(snap.year, cfg.db_path), snap.year, snap.week, events)
+        except Exception:
+            pass
         ek = (snap.fetched_at, edge_live.events_signature(cfg.db_path), st.session_state.get("_edge_nonce", 0))
         ce = st.session_state.get("_edge")
         if ce and ce["key"] == ek and not force:

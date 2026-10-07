@@ -64,6 +64,72 @@ def fresh(seconds: Optional[float], ttl: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# edge engine: adjusted projections with an expandable "why"
+# ---------------------------------------------------------------------------
+EDGE_LABEL = {"cascade": "Injury cascade", "defense": "Opposing defense / OL injuries", "vegas": "Game environment (Vegas)", "weather": "Weather",
+              "regression": "Opportunity vs. production", "schedule": "Rest-of-season schedule", "news": "News"}
+TAG_ICON = {"buy low": "trending_up", "sell high": "trending_down", "role growing": "moving"}
+
+
+def edge_label(p: PlayerInfo) -> str:
+    """'ESPN 12.4 → Adjusted 14.9' (or just the ESPN number when nothing was adjusted)."""
+    if p.has_edge:
+        return f"ESPN {p.espn_week_proj:.1f} → Adjusted {p.week_proj:.1f}"
+    return f"ESPN {p.week_proj:.1f}"
+
+
+def _clock(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%a %-I:%M %p") if ts else ""
+
+
+def edge_why(p: PlayerInfo, open_: bool = False) -> str:
+    """Expandable list of every adjustment: size, plain-English reason, source, confidence, timestamp."""
+    if not p.has_edge:
+        return ""
+    items = "".join(
+        f'<li><b class="num {"up" if a["delta"] > 0 else "dn"}">{a["delta"]:+.1f}</b> <span class="et">{esc(EDGE_LABEL.get(a["type"], a["type"]))}</span>'
+        f'<div>{esc(a["reason"])}</div><small>Source: {esc(a["source"])} · {esc(a["confidence"])} confidence · {esc(_clock(a["at"]))}'
+        f'{" · capped from " + format(a["raw"], "+.1f") if abs(a.get("raw", a["delta"]) - a["delta"]) >= 0.05 else ""}</small></li>' for a in sorted(p.edge, key=lambda a: -abs(a["delta"])))
+    return (f'<details class="why"{" open" if open_ else ""}><summary>{icon("bolt")}{esc(edge_label(p))}<span class="chev">why</span></summary>'
+            f'<ul>{items}</ul><div class="fine">Adjustments are added to ESPN\'s projection and capped per player. Missing data means no adjustment.</div></details>')
+
+
+def tag_chips(p: PlayerInfo) -> str:
+    return "".join(f'<span class="chip tag" title="{esc(t[1])}">{icon(TAG_ICON.get(t[0], "sell"))}{esc(t[0])}</span>' for t in p.tags)
+
+
+def game_env_html(env, compact: bool = False) -> str:
+    """Vegas + weather for one team's game, with the forecast timestamp."""
+    if env is None:
+        return notice("No game-environment data for this team this week.", "", "sports_football")
+    fav = "" if env.spread is None else (f"{env.team} favored by {env.spread:.1f}" if env.spread > 0 else f"{env.opp} favored by {-env.spread:.1f}" if env.spread < 0 else "Pick'em")
+    vegas = (f'{chip(fav, "", "attach_money")}{chip(f"Total {env.total:.1f}", "", "functions")}{chip(f"{env.team} implied {env.implied:.1f}", "", "scoreboard")}'
+             if env.spread is not None else chip("No Vegas line available", "", "attach_money"))
+    if env.wind_mph is not None:
+        w = chip(f"Wind {env.wind_mph:.0f} mph", "warn" if env.wind_mph >= 15 else "", "air") + chip(f"{env.temp_f:.0f}°F", "warn" if env.temp_f <= 25 else "", "thermostat")
+        if env.precip_prob:
+            w += chip(f"{env.precip_prob:.0f}% precip", "", "rainy")
+    else:
+        w = chip(env.weather_note or "Weather n/a", "", "partly_cloudy_day")
+    stamp = f'<small class="fresh">Lines: {esc(env.lines_source)}' + (f" · forecast {esc(_clock(env.forecast_at))}" if env.forecast_at and env.wind_mph is not None else "") + "</small>"
+    return f'<div class="fh-ctx">{vegas}{w}</div>{stamp}'
+
+
+def news_event_html(ev: dict, link: bool = True) -> str:
+    """One AI-parsed news item, clearly labeled as extracted (not written) by AI, with the raw text and a source link."""
+    st_map = {"out": ("Out", "bad"), "ir": ("IR", "bad"), "suspended": ("Suspended", "bad"), "doubtful": ("Doubtful", "bad"), "questionable": ("Questionable", "warn"), "active": ("Cleared", "good")}
+    st = st_map.get(ev.get("status") or "", None)
+    chips = chip("AI-extracted from ESPN news", "ai", "auto_awesome") + (chip(st[0], st[1], "medical_services") if st else chip(ev.get("event_type", "news").replace("_", " ").title(), "", "newspaper"))
+    if ev.get("expected_games_missed"):
+        chips += chip(f"{ev['expected_games_missed']} games", "", "event_busy")
+    src = f' <a href="{esc(ev["source_url"])}" target="_blank" rel="noopener">source</a>' if link and ev.get("source_url") else ""
+    ben = f'<div class="fresh">Named as picking up work: {esc(", ".join(ev["beneficiaries"]))}</div>' if ev.get("beneficiaries") else ""
+    return (f'<div class="news"><div class="fh-ctx">{chips}<b>{esc(ev.get("player", ""))}</b></div><p>{esc(ev.get("summary", ""))}</p>{ben}'
+            f'<details><summary class="fresh">Original text</summary><p>{esc(ev.get("raw_text", "")[:700])}</p></details>'
+            f'<small>{esc(str(ev.get("published_at", ""))[:16].replace("T", " "))} UTC{src}</small></div>')
+
+
+# ---------------------------------------------------------------------------
 # game time / lock state
 # ---------------------------------------------------------------------------
 def kickoff(p: PlayerInfo) -> Optional[datetime]:
@@ -186,6 +252,8 @@ class Brand:
         lock = lock_state(p)
         lock_chip = chip("Locked", "", "lock") if lock == "locked" else ""
         proj = fmt_pts(p.week_proj) if not p.on_bye else "-"
+        edge_chip = chip(f"Edge {p.edge_total:+.1f}", "ai", "bolt") if p.has_edge and not p.on_bye else ""
+        proj_label = (f'<small title="{esc(edge_label(p))}">ESPN {p.espn_week_proj:.1f}</small>' if p.has_edge and not p.on_bye else "<small>Proj</small>")
         bar = (f'<div class="bar" aria-hidden="true"><i style="width:{max(2, min(100, value_pct)):.0f}%"></i></div>' if value_pct is not None else "")
         stat2 = (f'<div class="stat hide-sm"><b>{fmt_pts(p.week_points)}</b><small>Actual</small></div>' if show_actual else
                  f'<div class="stat hide-sm"><b>{esc(value_label or fmt_pts(p.actual_ppg))}</b><small>{"ROS value" if value_label else "Avg"}</small>{bar}</div>')
@@ -193,9 +261,9 @@ class Brand:
             f'<div class="row {cls}" role="listitem" style="--tc:{self.color(p.pro_team)}">'
             f'<div class="who">{f"<span class=slot>{esc(slot)}</span>" if slot else ""}{self.avatar(p, 44)}'
             f'<div style="min-width:0"><div class="nm">{esc(p.name)}</div>'
-            f'<div class="sub">{chip(p.position, "pos")}{self.nfl_tag(p.pro_team)}{self.status_chip(p)}{lock_chip}{esc(note)}</div></div></div>'
+            f'<div class="sub">{chip(p.position, "pos")}{self.nfl_tag(p.pro_team)}{self.status_chip(p)}{lock_chip}{edge_chip}{tag_chips(p)}{esc(note)}</div>{edge_why(p)}</div></div>'
             f'<div class="opp">{opp}<small>{esc(kl) if not p.on_bye else ""}</small></div>'
-            f'<div class="stat"><b>{proj}</b><small>Proj</small></div>{stat2}</div>'
+            f'<div class="stat{" edge" if p.has_edge and not p.on_bye else ""}"><b>{proj}</b>{proj_label}</div>{stat2}</div>'
         )
 
     def rows(self, inner: str) -> str:
@@ -221,14 +289,15 @@ class Brand:
 
     # ---- recommendation card ----
     def rec_card(self, title: str, body: str, *, ic: str = "bolt", tone: str = "", gain: Optional[float] = None,
-                 gain_label: str = "pts", why: str = "", todo: str = "", players: Iterable[PlayerInfo] = (), feature: bool = False) -> str:
+                 gain_label: str = "pts", why: str = "", todo: str = "", players: Iterable[PlayerInfo] = (), feature: bool = False, edge_note: str = "") -> str:
         av = "".join(f'<span style="margin-left:-8px">{self.avatar(p, 34)}</span>' for p in list(players)[:3])
         g = f'<div class="gain"><b>{signed(gain)}</b><small>{esc(gain_label)}</small></div>' if gain is not None else ""
         why_html = f'<div class="why">{esc(why)}</div>' if why else ""
         todo_html = f'<div class="todo">{icon("arrow_forward")}<span>{esc(todo)}</span></div>' if todo else ""
+        edge_html = f'<div class="edgenote">{icon("bolt")}<span>{esc(edge_note)}</span></div>' if edge_note else ""
         faces = f'<div style="display:flex">{av}</div>' if av else ""
         return (f'<article class="rec glass-med{" feature" if feature else ""}"><div class="ic {tone}">{icon(ic)}</div><div style="min-width:0;flex:1">'
-                f'<h4>{esc(title)}</h4><p>{body}</p>{why_html}{todo_html}</div>{faces}{g}</article>')
+                f'<h4>{esc(title)}</h4><p>{body}</p>{why_html}{edge_html}{todo_html}</div>{faces}{g}</article>')
 
 
 # ---------------------------------------------------------------------------

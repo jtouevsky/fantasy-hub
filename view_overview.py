@@ -8,6 +8,7 @@ import streamlit as st
 import news as news_mod
 import ui
 import waivers
+from edge.timing import timing_alerts
 from ctx import Ctx
 from views_common import ai_button, goto_button, html, matchup_state, move_gain
 
@@ -47,6 +48,31 @@ def render(ctx: Ctx) -> None:
         chips.append(ui.chip(f"FAAB ${int(snap.faab_budget - me.faab_spent)} left", "", "payments"))
     html(f'<div class="fh-ctx" style="margin-top:14px">{"".join(chips)}</div>')
 
+    # ---- news that changes my lineup (always first) ---------------------------------------
+    html(ui.section("News that changes my lineup", ctx.scan_status or "AI reads ESPN news; every item links to its source"))
+    mine = {p.player_id: p for p in me.roster}
+    blocks = []
+    for a in timing_alerts(me.roster, ctx.edge):
+        blocks.append(ui.notice(f"<b>{'Re-check before lock' if a['kind'] == 'gtd' else 'Teammate watch'}</b> · {ui.esc(a['message'])}", "warn" if a["severity"] == "watch" else "bad", "schedule"))
+    relevant = [ev for ev in ctx.events if ev.get("player_espn_id") in mine and (ev.get("status") or ev.get("event_type") in ("role_change", "depth_chart", "suspension"))]
+    blocks += [ui.news_event_html(ev) for ev in relevant[:4]]
+    if ctx.edge:
+        for c in ctx.edge.cascades:
+            for b in c["beneficiaries"]:
+                if b.get("espn_id") in mine and abs(b["weekly_pts"]) >= 1.5:
+                    who = ", ".join(f"{x['name']} ({x['status']})" for x in c["absent"][:2])
+                    blocks.append(ui.notice(f"<b>Edge:</b> {ui.esc(b['reason'])}", "", "bolt"))
+                    break
+    html("".join(blocks) if blocks else ui.notice("Nothing in the news or injury reports changes your lineup right now.", "good", "check_circle"))
+    cb1, cb2, _ = st.columns([2.4, 2.2, 3])
+    with cb1:
+        if st.button("Re-check injuries & edges", key="ov_recheck", icon=":material/refresh:", help="Re-pulls the NFL injury report, ESPN and Sleeper, then re-runs every edge and the lineup optimizer.", disabled=ctx.demo):
+            st.session_state["_force_refresh"] = True
+            st.rerun()
+    with cb2:
+        if relevant or ctx.events:
+            ai_button("Summarize news with AI", "ov_news_top", "Summarize the news and injuries affecting my roster this week and what I should do before lock.", "News summary", "newspaper")
+
     left, right = st.columns([3, 2], gap="large")
 
     # ---- needs attention ----
@@ -57,7 +83,8 @@ def render(ctx: Ctx) -> None:
             cards += 1
             html(b.rec_card(f"Start {s.player_in.name}" + (f" over {s.player_out.name}" if s.player_out else ""), ui.esc(s.reason),
                             ic="swap_vert", tone="act" if s.gain >= 5 else "", gain=s.gain, gain_label="proj pts",
-                            why=f"{s.player_in.position} · {s.player_in.pro_team} · projected {s.player_in.week_proj:.1f} (ESPN)",
+                            why=f"{s.player_in.position} · {s.player_in.pro_team} · {ui.edge_label(s.player_in)}",
+                            edge_note=(s.edge_note if s.from_edge else ""),
                             todo=s.action(), players=[s.player_in] + ([s.player_out] if s.player_out else []), feature=(i == 0)))
             c1, c2, _ = st.columns([2, 2, 3])
             with c1:
@@ -85,25 +112,6 @@ def render(ctx: Ctx) -> None:
         if not cards:
             html(ui.notice("<b>Nothing urgent.</b> Your lineup is set and no waiver move is clearly worth making.", "good", "check_circle"))
 
-        # ---- roster news (lazy, with skeleton) ----
-        html(ui.section("News affecting your roster"))
-        slot = st.empty()
-        fetch = ctx.news_fetch()
-        if fetch is None:
-            slot.html(ui.notice("Player news comes from ESPN and Sleeper, so it isn't shown in demo mode.", "", "newspaper"))
-        else:
-            slot.html(ui.skeleton(2, 56))
-            try:
-                data = news_mod.collect_team_news(me, fetch, ctx.index, ctx.cfg.db_path)
-                alerts = news_mod.lineup_alerts(snap, me, data)
-                parts = [ui.notice(f"<b>{a.severity.title()}:</b> {ui.esc(a.message)}", {"ACT": "bad", "WATCH": "warn", "INFO": ""}[a.severity],
-                                   {"ACT": "error", "WATCH": "visibility", "INFO": "info"}[a.severity]) for a in alerts[:5]]
-                slot.html("".join(parts) if parts else ui.notice("No injury or news alerts for your starters.", "good", "check_circle"))
-                if alerts:
-                    ai_button("Summarize news with AI", "ov_news", "Summarize the latest news and injuries affecting my roster this week and tell me what to do.",
-                              "News summary", "newspaper")
-            except Exception as e:
-                slot.html(ui.notice(f"News couldn't be loaded ({type(e).__name__}). Your other data is fine.", "warn", "cloud_off"))
 
     # ---- standings snapshot ----
     with right:

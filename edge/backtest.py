@@ -286,6 +286,7 @@ def main() -> None:
     reg = module_registry()
     reports, shipped = [], []
     params = {"settings": {"cap_pct": settings.cap_pct, "cap_floor": settings.cap_floor}, "live_scale": LIVE_SCALE, "modules": {}}
+    params["summary_pending"] = True
     for key, cls in reg.items():
         print(f"  evaluating {key} ...")
         r = evaluate(cls, h, E, key, settings)
@@ -295,6 +296,8 @@ def main() -> None:
         if r.alpha > 0:
             shipped.append((cls().fit(h, E[E.season == 2024]), r.alpha))
     comb = combined(shipped, h, E, settings)
+    params["summary"] = {"mae_base": round(comb["mae_base"], 3), "mae_adj": round(comb["mae_adj"], 3), "gain_lo": round(comb["lo"], 3), "gain_hi": round(comb["hi"], 3), "n": comb["n"]}
+    params.pop("summary_pending", None)
     abl, tags = ablations(h, E), tag_validation(h, E)
     print(f"combined: {comb['mae_base']:.3f} -> {comb['mae_adj']:.3f} ({comb['gain']:+.4f})")
     os.makedirs("docs", exist_ok=True)

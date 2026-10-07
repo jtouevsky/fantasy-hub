@@ -51,11 +51,15 @@ def test_every_tool_runs_on_demo_data(tmp_path):
         "get_player_news": {"player": mine.name},
         "log_recommendation": {"kind": "trade", "summary": "x"},
     }
-    assert set(calls) == agent.TOOL_NAMES
+    edge_tools = {"get_edges": {"player_or_team": mine.name}, "get_injury_cascade": {"team": "KC"}, "get_buy_low_sell_high": {}, "get_game_environment": {"game": "KC"}}
+    assert set(calls) | set(edge_tools) == agent.TOOL_NAMES
     for name, args in calls.items():
         out, err = t.call(name, args)
         assert not err, (name, out)
         json.dumps(out)                                  # results must be JSON-serializable
+    for name, args in edge_tools.items():                # demo mode has no edge engine: tools must say so plainly instead of inventing data
+        out, err = t.call(name, args)
+        assert err and "edge engine isn't running" in out["error"], (name, out)
 
 
 def test_team_lookup_by_owner_first_name_and_errors_are_returned_not_raised(tmp_path):

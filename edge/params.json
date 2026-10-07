@@ -175,5 +175,12 @@
   "settings": {
     "cap_floor": 6.0,
     "cap_pct": 0.35
+  },
+  "summary": {
+    "gain_hi": 0.332,
+    "gain_lo": 0.204,
+    "mae_adj": 5.362,
+    "mae_base": 5.63,
+    "n": 3690
   }
 }

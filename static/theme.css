@@ -383,3 +383,22 @@ button[data-testid="stBaseButton-primary"]::after, .st-key-navbar button[role="r
 @media (prefers-reduced-motion: reduce) {
   .silver::after, .rec.feature::after, .st-key-ai_answer::after, button::after { animation: none !important; background-position: -170% 0, 0 0 !important; }
 }
+
+/* ---------- edge engine: adjusted projections, why, tags ---------- */
+.chip.tag { text-transform: capitalize; background: var(--solid-2); border: 1px solid var(--line-strong); color: var(--ink); }
+.row .stat.edge b { position: relative; }
+.row .stat.edge b::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; border-radius: 2px; background: var(--silver-edge); }
+details.why { margin-top: 7px; font-size: 12.5px; color: var(--ink-2); }
+details.why summary { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: var(--r-pill); background: var(--chip); font-weight: 600; list-style: none; transition: background var(--t-micro) var(--ease); }
+details.why summary::-webkit-details-marker { display: none; }
+details.why summary:hover { background: var(--hover); }
+details.why summary .chev { margin-left: 4px; color: var(--ink-3); font-weight: 500; }
+details.why summary .chev::after { content: " ▾"; } details.why[open] summary .chev::after { content: " ▴"; }
+details.why ul { list-style: none; margin: 8px 0 0; padding: 10px 12px; border-radius: 14px; background: var(--solid-2); display: grid; gap: 10px; white-space: normal; }
+details.why li b { font-family: var(--f-disp); font-size: 17px; margin-right: 6px; } details.why li b.up { color: var(--good); } details.why li b.dn { color: var(--bad); }
+details.why li .et { font-weight: 700; color: var(--ink); } details.why li div { margin-top: 2px; line-height: 1.45; } details.why li small { color: var(--ink-3); font-size: 11.5px; }
+details.why .fine { margin-top: 6px; color: var(--ink-3); font-size: 11.5px; }
+.news details summary { cursor: pointer; margin-top: 4px; } .news a { text-decoration: underline; text-underline-offset: 2px; }
+.rec .edgenote { margin-top: 8px; font-size: 12.5px; color: var(--ink-2); display: flex; gap: 6px; align-items: flex-start; } .rec .edgenote .ms { color: var(--ink-3); }
+.edge-table { width: 100%; border-collapse: collapse; font-size: 13px; } .edge-table th { text-align: left; color: var(--ink-3); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 6px 8px; }
+.edge-table td { padding: 8px; border-top: 1px solid var(--line); vertical-align: top; } .edge-table .num { font-variant-numeric: tabular-nums; font-weight: 700; }

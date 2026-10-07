@@ -7,6 +7,8 @@ import streamlit as st
 
 import db
 import news as news_mod
+from edge.settings import load_params
+from edge import odds as odds_mod
 import ui
 from ctx import Ctx
 from views_common import ai_button, html, player_list
@@ -72,6 +74,58 @@ def _log(ctx: Ctx) -> None:
     html(f'<div class="fresh">Latest entry IDs: {ids}</div>')
 
 
+def _edge_engine(ctx: Ctx) -> None:
+    e = ctx.edge
+    if e is None:
+        html(ui.empty("The edge engine isn't running", "Demo data has no real player IDs; with a real league it runs automatically. If this is your league, check the warnings at the top of the page.", "bolt"))
+        return
+    params = load_params()
+    html(ui.section("How it works"))
+    html(ui.notice("Every number starts with <b>ESPN's projection</b>. Edges add or subtract points for specific, explainable reasons; each adjustment is stored with its source and confidence, "
+                   "total movement is capped per player, and if data is missing nothing is adjusted. Strengths below come from a backtest on 2024-2025 (see docs/backtest.md).", "", "bolt"))
+    s = params.get("summary")
+    if s:
+        html(f'<div class="kpis"><div class="kpi"><b>{s["mae_base"]:.2f} → {s["mae_adj"]:.2f}</b><small>Typical weekly miss (pts), 2025 hold-out</small></div>'
+             f'<div class="kpi"><b>{s["gain_lo"]:+.2f} to {s["gain_hi"]:+.2f}</b><small>95% CI of the improvement</small></div></div>')
+        html('<div class="fresh">Measured against a simple trailing-average baseline (ESPN history isn\'t available), so gains over real ESPN projections will be smaller.</div>')
+    html(ui.section("Modules"))
+    live = params.get("live_scale", {})
+    names = {"vegas": "Game environment (Vegas)", "weather": "Weather", "cascade": "Injury cascade", "defense": "Opposing defense / own OL injuries", "regression": "Opportunity vs. production"}
+    rows = "".join(f'<tr><td>{ui.esc(names.get(k, k))}</td><td>{ui.chip(v.get("decision", "?"), "good" if v.get("decision") == "ON" else "warn" if v.get("decision") == "SHRUNK" else "")}</td>'
+                   f'<td class="num">{v.get("alpha", 0):g}</td><td class="num">x{live.get(k, 1):g}</td></tr>' for k, v in params.get("modules", {}).items())
+    html(f'<div class="solid" style="border-radius:18px;padding:8px 12px"><table class="edge-table"><tr><th>Module</th><th>Backtest verdict</th><th>Strength</th><th>Live haircut</th></tr>{rows}</table></div>'
+         '<div class="fresh" style="margin-top:6px">Live haircuts are judgment calls: ESPN already absorbs part of these signals. News scanning (AI) and timing alerts are not backtestable and only drive alerts/injury status.</div>')
+    html(ui.section("Data sources right now"))
+    ds = dict(e.data_status)
+    q = odds_mod.quota(ctx.cfg.db_path)
+    if q["remaining"]:
+        ds["odds_quota"] = f"The Odds API credits remaining: {q['remaining']}"
+    html("".join(ui.notice(f"<b>{ui.esc(k.replace('_', ' '))}:</b> {ui.esc(v)}", "", "database") for k, v in ds.items()))
+    if ctx.scan_status:
+        html(ui.notice(f"<b>AI news scan:</b> {ui.esc(ctx.scan_status)}", "", "auto_awesome"))
+    html(ui.section("Injury cascades in effect", "who is out, and who picks up the work"))
+    shown = 0
+    for c in sorted(e.cascades, key=lambda c: -max((abs(b["weekly_pts"]) for b in c["beneficiaries"]), default=0))[:8]:
+        absent = ", ".join(f'{a["name"]} ({a["status"]}{", long-term" if a["long_term"] else ""}; p(out) {a["p_out"]:.0%})' for a in c["absent"][:4])
+        top = sorted(c["beneficiaries"], key=lambda b: -abs(b["weekly_pts"]))[:3]
+        html(f'<div class="news"><b>{ui.esc(c["team"])}</b> · {ui.esc(absent)}' + "".join(f'<p>{ui.esc(b["reason"])}</p>' for b in top) + "</div>")
+        shown += 1
+    if not shown:
+        html(ui.notice("No skill-position absences are creating cascades this week.", "", "check_circle"))
+    html(ui.section("Biggest adjustments this week"))
+    pls = [p for t in ctx.snap.teams for p in t.roster] + list(ctx.fas)
+    adj = sorted((p for p in pls if p.has_edge), key=lambda p: -abs(p.edge_total))[:25]
+    body = "".join(f'<tr><td><b>{ui.esc(p.name)}</b><br><small>{p.position} · {ui.esc(p.pro_team)}</small></td><td class="num">{ui.edge_label(p)}</td>'
+                   f'<td>{ui.esc(max(p.edge, key=lambda a: abs(a["delta"]))["reason"])}</td></tr>' for p in adj)
+    html(f'<div class="solid" style="border-radius:18px;padding:8px 12px"><table class="edge-table"><tr><th>Player</th><th>Projection</th><th>Biggest reason</th></tr>{body}</table></div>' if adj else ui.notice("No adjustments this week.", "", "info"))
+    html(ui.section("Game environments"))
+    envs = {frozenset((x.team, x.opp)): x for x in e.game_env.values()}
+    html("".join(f'<div style="margin:6px 0"><b>{ui.esc(x.team)} vs {ui.esc(x.opp)}</b> <span class="fresh">{ui.esc(x.kickoff)}</span>{ui.game_env_html(x)}</div>' for x in envs.values()) or ui.notice("No schedule rows.", "", "info"))
+    if ctx.events:
+        html(ui.section("AI-parsed news this week", f"{len(ctx.events)} events"))
+        html("".join(ui.news_event_html(ev) for ev in ctx.events[:10]))
+
+
 def render(ctx: Ctx) -> None:
-    sel = st.segmented_control("More", ["News", "Recommendation log"], default="News", key="more_sel", label_visibility="collapsed") or "News"
-    (_news if sel == "News" else _log)(ctx)
+    sel = st.segmented_control("More", ["News", "Edge engine", "Recommendation log"], default="News", key="more_sel", label_visibility="collapsed") or "News"
+    {"News": _news, "Edge engine": _edge_engine}.get(sel, _log)(ctx)
