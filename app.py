@@ -26,7 +26,7 @@ LABELS = {f":material/{ic}: {name}": (name, mod) for name, ic, mod in PAGES}
 
 def apply_theme(cfg) -> None:
     mode = theme.get_mode(cfg.db_path)
-    accent, ink = "#4f74e3", "#ffffff"
+    accent, ink = None, "#ffffff"
     fav = theme.get_accent_team(cfg.db_path)
     if fav:
         t = assets.team(fav, cfg.db_path)

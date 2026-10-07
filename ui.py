@@ -204,7 +204,6 @@ class Brand:
     # ---- scoreboard ----
     def scoreboard(self, a: TeamInfo, b: TeamInfo, a_score: float, b_score: float, a_proj: float, b_proj: float,
                    week: int, state: str, fresh_html: str = "") -> str:
-        ca, cb = "#4f74e3", "#9aa3b2"
         edge = a_proj - b_proj
         fav = (f"{a.name} favored by {abs(edge):.1f} (projection)" if edge > 0.05 else
                f"{b.name} favored by {abs(edge):.1f} (projection)" if edge < -0.05 else "Projected dead even")
@@ -214,7 +213,7 @@ class Brand:
         score = lambda proj, act: (f'<div class="p"><span class="legend">Projected</span><span class="big num">{proj:.1f}</span>'
                                    + (f'<div class="actual num">Actual {act:.1f}</div>' if started else "") + "</div>")
         return (
-            f'<section class="board glass" style="--tc-a:{ca};--tc-b:{cb}" aria-label="Week {week} matchup">'
+            f'<section class="board glass silver" aria-label="Week {week} matchup">'
             f'<div class="meta"><span>Week {week} · {esc(state)}</span><span>{fresh_html}</span></div>'
             f'<div class="grid">{side(a, False)}<div class="score"><div class="pair">{score(a_proj, a_score)}<span class="sep">–</span>{score(b_proj, b_score)}</div></div>{side(b, True)}</div>'
             f'<div class="foot">{chip(fav, "info", "insights")}{chip("ESPN projections, not a win-probability model", "", "info")}</div></section>'
@@ -222,13 +221,13 @@ class Brand:
 
     # ---- recommendation card ----
     def rec_card(self, title: str, body: str, *, ic: str = "bolt", tone: str = "", gain: Optional[float] = None,
-                 gain_label: str = "pts", why: str = "", todo: str = "", players: Iterable[PlayerInfo] = ()) -> str:
+                 gain_label: str = "pts", why: str = "", todo: str = "", players: Iterable[PlayerInfo] = (), feature: bool = False) -> str:
         av = "".join(f'<span style="margin-left:-8px">{self.avatar(p, 34)}</span>' for p in list(players)[:3])
         g = f'<div class="gain"><b>{signed(gain)}</b><small>{esc(gain_label)}</small></div>' if gain is not None else ""
         why_html = f'<div class="why">{esc(why)}</div>' if why else ""
         todo_html = f'<div class="todo">{icon("arrow_forward")}<span>{esc(todo)}</span></div>' if todo else ""
         faces = f'<div style="display:flex">{av}</div>' if av else ""
-        return (f'<article class="rec glass-med"><div class="ic {tone}">{icon(ic)}</div><div style="min-width:0;flex:1">'
+        return (f'<article class="rec glass-med{" feature" if feature else ""}"><div class="ic {tone}">{icon(ic)}</div><div style="min-width:0;flex:1">'
                 f'<h4>{esc(title)}</h4><p>{body}</p>{why_html}{todo_html}</div>{faces}{g}</article>')
 
 

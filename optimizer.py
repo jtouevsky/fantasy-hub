@@ -173,6 +173,8 @@ def plan_lineup(players: list[PlayerInfo], starter_slots: dict[str, int]) -> Lin
             outs_left.remove(pout)
         gain = availability(pin) - (availability(pout) if pout else 0.0)
         swaps.append(Swap(pin, pout, slot_of[pin.player_id], round(gain, 1), _reason(pin, pout)))
+    # drop pure ties (equal projections) so the UI never recommends a +0.0 swap; keep forced moves (bye/out/empty slot)
+    swaps = [s for s in swaps if s.gain >= 0.1 or s.player_out is None or s.player_out.is_out or s.player_out.on_bye]
     swaps.sort(key=lambda s: -s.gain)
 
     warnings = []

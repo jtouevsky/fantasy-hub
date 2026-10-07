@@ -58,7 +58,7 @@ def render(ctx: Ctx) -> None:
             html(b.rec_card(f"Start {s.player_in.name}" + (f" over {s.player_out.name}" if s.player_out else ""), ui.esc(s.reason),
                             ic="swap_vert", tone="act" if s.gain >= 5 else "", gain=s.gain, gain_label="proj pts",
                             why=f"{s.player_in.position} · {s.player_in.pro_team} · projected {s.player_in.week_proj:.1f} (ESPN)",
-                            todo=s.action(), players=[s.player_in] + ([s.player_out] if s.player_out else [])))
+                            todo=s.action(), players=[s.player_in] + ([s.player_out] if s.player_out else []), feature=(i == 0)))
             c1, c2, _ = st.columns([2, 2, 3])
             with c1:
                 goto_button("Open My Team", f"ov_team_{i}", "My Team")
