@@ -338,7 +338,7 @@ Rules you must follow:
 3. Explain in plain English. Assume the user doesn't know football jargon: explain terms like FLEX, bye week, waiver claim in a few words the first time. Describe "value" as "how many more points than a free replacement player over the rest of the season".
 4. For trade requests: call find_trades (or evaluate_trade for a specific deal) and present the best 1-3 options. For each, say who is given/received, the value split, how each team's lineup changes, and why the other manager might accept. If the user names a split like 60/40, use it as target_split (60 = in their favor). Mention if a trade needs a drop or a waiver pickup. If none are good, say so honestly.
 5. You are READ-ONLY. You cannot make moves. End every recommendation with a line starting "Do this in the ESPN app:" saying exactly what to tap/propose.
-6. Call log_recommendation once for each concrete recommendation you make (trade, lineup change, waiver move).
+6. Call log_recommendation once for each concrete recommendation you make (trade, lineup change, waiver move). Write your COMPLETE answer as plain text in your final message; never leave the explanation only in a message that also calls a tool.
 7. EDGES: projections you see may be "adjusted" = ESPN's number plus edge-engine adjustments (injury cascades, game environment, weather, opposing-defense/OL injuries, opportunity-vs-production tags). When a recommendation depends on an adjustment, call get_edges and CITE it: give ESPN's number, the adjusted number, which adjustment drove it, its size, its source and confidence. If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link when you use one. injury-cascade estimates are context only (backtest: no accuracy gain) - never present them as part of a projection; buy-low/sell-high tags were validated in a backtest; "role growing" was not.
 8. Be concise. Lead with the answer, then the reasoning. Flag uncertainty (questionable injuries, trending news)."""
 
@@ -384,7 +384,14 @@ def run_turn(client, model_name: str, tools: AgentTools, history: list[dict], us
     else:
         messages.append({"role": "assistant", "content": [{"type": "text", "text": "(I hit my tool-call limit; please ask again more narrowly.)"}]})
 
-    text = "\n".join(b["text"] for b in messages[-1]["content"] if b["type"] == "text").strip()
+    pieces = []
+    for m in messages[len(history) + 1:]:           # every assistant message of this turn that wrote text beside only log_recommendation calls (or no tools)
+        if m["role"] != "assistant":
+            continue
+        calls = [b["name"] for b in m["content"] if b["type"] == "tool_use"]
+        if not calls or all(n == "log_recommendation" for n in calls):
+            pieces.append("\n".join(b["text"] for b in m["content"] if b["type"] == "text").strip())
+    text = _final_answer(pieces)
     used = [t["tool"] for t in trace if t["tool"] in RECOMMENDATION_TOOLS and not t["error"]]
     if used and not tools.logged_explicitly:      # safety net so every recommendation is logged
         db.log_recommendation(RECOMMENDATION_TOOLS[used[0]], (text or user_text)[:500],
@@ -418,6 +425,14 @@ def subscription_available() -> tuple[bool, str]:
     return False, "Claude Code isn't logged in. Run `claude` in a terminal and sign in with your Claude account."
 
 
+def _final_answer(parts: list[str]) -> str:
+    """Join the answer pieces; drop a trailing 'I've logged it' confirmation when a real answer came before it."""
+    parts = [p for p in parts if p]
+    if len(parts) >= 2 and len(parts[-1]) < 160 and re.search(r"\blogged\b", parts[-1], re.I):
+        parts = parts[:-1]
+    return "\n\n".join(parts).strip()
+
+
 async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional[str], user_text: str) -> TurnResult:
     from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, create_sdk_mcp_server,
                                   query, tool)
@@ -444,21 +459,23 @@ async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional
         resume=session_id,
         env={"ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": ""},   # force the claude.ai subscription login
     )
-    texts: list[str] = []
+    answer_parts: list[str] = []
     new_session = session_id
     async for msg in query(prompt=user_text, options=options):
         if isinstance(msg, AssistantMessage):
-            turn_text = [b.text for b in msg.content if isinstance(b, TextBlock)]
-            has_tool = any(getattr(b, "type", "") == "tool_use" or b.__class__.__name__ == "ToolUseBlock" for b in msg.content)
-            if turn_text and not has_tool:
-                texts = turn_text                         # keep only the last tool-free assistant message
+            turn_text = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock)).strip()
+            tool_names = [getattr(b, "name", "") for b in msg.content if b.__class__.__name__ == "ToolUseBlock"]
+            only_logging = bool(tool_names) and all(n.endswith("log_recommendation") for n in tool_names)
+            if turn_text and (not tool_names or only_logging):
+                answer_parts.append(turn_text)       # the answer may sit in the same message that logs it; keep it
         elif isinstance(msg, ResultMessage):
             new_session = msg.session_id or new_session
             if msg.is_error:
                 raise RuntimeError(msg.result or "Claude returned an error.")
-            if not texts and msg.result:
-                texts = [msg.result]
-    text = "\n".join(texts).strip()
+            if not answer_parts and msg.result:
+                answer_parts = [msg.result]
+    texts = _final_answer(answer_parts)
+    text = texts
     used = [t["tool"] for t in trace if t["tool"] in RECOMMENDATION_TOOLS and not t["error"]]
     if used and not tools.logged_explicitly:
         db.log_recommendation(RECOMMENDATION_TOOLS[used[0]], (text or user_text)[:500],

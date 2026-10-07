@@ -123,3 +123,15 @@ def test_chat_backend_defaults_to_subscription_and_ignores_placeholder_key(monke
     assert cfg.chat_backend == "subscription" and cfg.anthropic_api_key == ""
     monkeypatch.setenv("CHAT_BACKEND", "api")
     assert config.load_config().chat_backend == "api"
+
+
+def test_answer_written_beside_the_log_call_is_not_lost(tmp_path):
+    t = _tools(tmp_path)
+    client = FakeClaude([
+        ("tool_use", [tx("Start Sutton: ESPN 10.2 -> adjusted 12.0 (opportunity edge, low confidence). Do this in the ESPN app: start him."), tu(1, "log_recommendation", kind="lineup", summary="Start Sutton")]),
+        ("end_turn", [tx("I've logged the recommendation.")]),
+    ])
+    res = agent.run_turn(client, "m", t, [], "who do I start?")
+    assert "ESPN 10.2 -> adjusted 12.0" in res.text and "I've logged" not in res.text
+    assert agent._final_answer(["Real answer here that is long enough to matter.", "Logged it."]) == "Real answer here that is long enough to matter."
+    assert agent._final_answer(["Only message, and it mentions logged but is the whole answer."]) == "Only message, and it mentions logged but is the whole answer."
