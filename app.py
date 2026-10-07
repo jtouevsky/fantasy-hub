@@ -133,6 +133,8 @@ def main() -> None:
         setup_screen(cfg, str(e))
         return
     except Exception as e:
+        import logging
+        logging.getLogger("fantasy_hub").exception("load_ctx failed")
         setup_screen(cfg, f"Something went wrong loading your league ({type(e).__name__}). Your cached data, if any, is untouched.")
         return
 

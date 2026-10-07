@@ -410,7 +410,7 @@ Rules you must follow:
 4. TRADES: call find_trades (whole league by default; pass the user's words as `request`) or evaluate_trade. Always answer TWO separate questions and never blend them: (a) should the user offer it (their value and lineup, week by week) and (b) would the other manager accept (market value, need, situation, history; use the label likely / coin flip / unlikely and the listed reasons; never invent percentages). Include the offer ladder (Open/Fair/Walk away), the risk, and say which constraints you parsed so they can correct them. If none are good, say so.
 5. After any negotiation outcome the user reports, call log_negotiation. Use get_manager_profile before judging how a specific manager will respond.
 6. You are READ-ONLY. You cannot make moves or send messages (draft_trade_pitch only drafts). End every recommendation with a line starting "Do this in the ESPN app:".
-7. Call log_recommendation once for each concrete recommendation. Write your COMPLETE answer as plain text in your final message; never leave the explanation only in a message that also calls a tool.
+7. Call log_recommendation once for each concrete recommendation (including a 'no move needed' answer). Your FINAL message must be the complete answer in plain text; never end with only a confirmation that you logged it, and never leave the explanation only in a message that also calls a tool.
 8. EDGES: projections may be "adjusted" (ESPN's number plus edge-engine adjustments). When a recommendation depends on one, call get_edges and CITE it (ESPN number, adjusted number, driver, size, source, confidence). If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link. Injury-cascade estimates are context only; buy-low/sell-high tags were backtested; "role growing" was not.
 9. Be concise and plain. Explanation level is set in the strategy (Short = no definitions; Beginner = define terms briefly). Lead with the answer; flag uncertainty."""
 
@@ -532,12 +532,15 @@ async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional
         env={"ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": ""},   # force the claude.ai subscription login
     )
     answer_parts: list[str] = []
+    all_texts: list[str] = []
     new_session = session_id
     async for msg in query(prompt=user_text, options=options):
         if isinstance(msg, AssistantMessage):
             turn_text = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock)).strip()
             tool_names = [getattr(b, "name", "") for b in msg.content if b.__class__.__name__ == "ToolUseBlock"]
             only_logging = bool(tool_names) and all(n.endswith("log_recommendation") for n in tool_names)
+            if turn_text:
+                all_texts.append(turn_text)
             if turn_text and (not tool_names or only_logging):
                 answer_parts.append(turn_text)       # the answer may sit in the same message that logs it; keep it
         elif isinstance(msg, ResultMessage):
@@ -547,6 +550,10 @@ async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional
             if not answer_parts and msg.result:
                 answer_parts = [msg.result]
     texts = _final_answer(answer_parts)
+    if len(texts) < 160 and re.search(r"\blogged\b", texts, re.I):          # the model ended with only 'I logged it': recover its real answer from earlier in the turn
+        longer = max((t for t in all_texts if t != texts), key=len, default="")
+        if len(longer) > len(texts):
+            texts = longer
     text = texts
     used = [t["tool"] for t in trace if t["tool"] in RECOMMENDATION_TOOLS and not t["error"]]
     if used and not tools.logged_explicitly:

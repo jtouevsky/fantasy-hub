@@ -71,7 +71,10 @@ def offer_card(ctx: Ctx, ev: trading.TradeEval) -> str:
         chips += ui.chip("Confirmed by manager", "good", "verified")
     if ev.speculative:
         chips += ui.chip("Speculative", "warn", "bolt")
-    reasons = "".join(f"<li>{ui.esc(r)}</li>" for r in a.reasons[:4])
+    sig = sorted(a.signals, key=lambda x: -abs(x.contribution))
+    pro = "".join(f'<li><b class="pos">+</b> {ui.esc(x.name)}: {ui.esc(x.text)}</li>' for x in sig if x.contribution >= 0.1)
+    con = "".join(f'<li><b class="neg">-</b> {ui.esc(x.name)}: {ui.esc(x.text)}</li>' for x in sig if x.contribution <= -0.1)
+    reasons = (f"<li><i>{ui.esc(a.confirmed)}</i></li>" if a.confirmed else "") + pro + con
     risk = "".join(f"<li>{ui.esc(r)}</li>" for r in trading.risk_lines(w, ev))
     notes = "".join(f"<li>{ui.esc(n)}</li>" for n in ev.notes if "Speculative" not in n)
     mine_share, theirs_share = ev.my_split, ev.market_split_theirs
@@ -88,7 +91,7 @@ def offer_card(ctx: Ctx, ev: trading.TradeEval) -> str:
         f'<div class="track m" role="img" aria-label="Market value split {100 - theirs_share:.0f} to {theirs_share:.0f}"><i style="width:{100 - theirs_share:.0f}%"></i></div>'
         f'<div class="lbl"><span>You {100 - theirs_share:.0f}</span><span>{theirs_share:.0f} Them</span></div></div></div>'
         f'<div class="wkhead">Your lineup, week by week <small>(expected points change; playoff weeks count 1.5x)</small></div>{_weeks_row(w, ev)}'
-        f'<div class="why2"><div><h5>Why he might say {"yes" if a.plausible else "no"}</h5><ul>{reasons or "<li>No strong signals either way.</li>"}</ul></div>'
+        f'<div class="why2"><div><h5>His side: for and against</h5><ul>{reasons or "<li>No strong signals either way.</li>"}</ul></div>'
         f'<div><h5>Risk and notes</h5><ul>{risk}{notes or ""}{"" if (risk or notes) else "<li>Nothing unusual.</li>"}</ul></div></div>'
         f'{_ladder(ev)}'
         f'<div class="todo">{ui.icon("arrow_forward")}<span>Do this in the ESPN app: open {ui.esc(ev.other.name)}\'s team and propose this trade.</span></div></article>')

@@ -8,12 +8,12 @@ import streamlit as st
 import ai_runner
 import ui
 from ctx import Ctx
-from views_common import html
+from views_common import html, moves_from_trace
 
 EXAMPLES = [
     ("Who should I start this week?", "Who should I start this week and why?"),
-    ("Best trade with Kaden", "Find me the best trade with Kaden for my Trey McBride to get one of his receivers, slightly in my favor, like 60/40."),
-    ("Who should I pick up?", "Which free agents should I pick up, and who would I drop?"),
+    ("Find me a trade", "Scan the whole league for a trade that helps my lineup, slightly in my favor (about 60/40 in my value), that the other manager would plausibly accept. Show the offer ladder."),
+    ("Any waiver moves?", "Do I need any add/drop or streaming move this week? If not, say so."),
     ("Is anyone injured?", "Is anyone on my team injured or on a bye, and what should I do?"),
 ]
 
@@ -38,6 +38,7 @@ def render(ctx: Ctx) -> None:
     for role, text, trace in ss["chat_ui"]:
         with st.chat_message(role):
             st.markdown(text)
+            moves_from_trace(trace, f"h{abs(hash(text)) % 10**6}")
             if trace:
                 with st.expander(f"What I looked up ({len(trace)})"):
                     for t in trace:
