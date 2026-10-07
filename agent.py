@@ -239,6 +239,7 @@ class TurnResult:
     text: str
     history: list[dict]
     tool_trace: list[dict] = field(default_factory=list)
+    session_id: Optional[str] = None      # subscription backend: resume token for the conversation
 
 
 def _block_to_dict(b) -> dict:
@@ -280,3 +281,82 @@ def run_turn(client, model_name: str, tools: AgentTools, history: list[dict], us
         db.log_recommendation(RECOMMENDATION_TOOLS[used[0]], (text or user_text)[:500],
                               {"question": user_text, "tools": [t["tool"] for t in trace]}, tools.snap.week, "agent", tools.db_path)
     return TurnResult(text, messages, trace)
+
+
+# ---------------------------------------------------------------------------
+# Subscription backend: Claude Agent SDK (uses your local Claude Code login, no API key)
+# ---------------------------------------------------------------------------
+SDK_SERVER = "fantasy"
+
+
+def subscription_available() -> tuple[bool, str]:
+    """(ok, reason). True when the Agent SDK is installed and the `claude` CLI is logged in."""
+    import shutil
+    import subprocess
+    try:
+        import claude_agent_sdk  # noqa: F401
+    except ImportError:
+        return False, "Run: pip install claude-agent-sdk"
+    cli = shutil.which("claude") or shutil.which("claude", path=f"{__import__('os').path.expanduser('~')}/.local/bin")
+    if not cli:
+        return False, "Claude Code isn't installed (the `claude` command wasn't found)."
+    try:
+        out = subprocess.run([cli, "auth", "status"], capture_output=True, text=True, timeout=20).stdout
+        if json.loads(out).get("loggedIn"):
+            return True, ""
+    except Exception:
+        pass
+    return False, "Claude Code isn't logged in. Run `claude` in a terminal and sign in with your Claude account."
+
+
+async def _run_turn_sdk(model_name: str, tools: AgentTools, session_id: Optional[str], user_text: str) -> TurnResult:
+    from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, create_sdk_mcp_server,
+                                  query, tool)
+    trace: list[dict] = []
+    tools.logged_explicitly = False
+
+    def make(spec: dict):
+        @tool(spec["name"], spec["description"], spec["input_schema"])
+        async def handler(args: dict) -> dict:
+            out, is_err = tools.call(spec["name"], args)
+            trace.append({"tool": spec["name"], "input": args, "error": is_err, "result": out})
+            return {"content": [{"type": "text", "text": json.dumps(out)[:30000]}], "is_error": is_err}
+        return handler
+
+    server = create_sdk_mcp_server(SDK_SERVER, "1.0.0", tools=[make(t) for t in TOOLS])
+    options = ClaudeAgentOptions(
+        system_prompt=system_prompt(tools.snap),
+        mcp_servers={SDK_SERVER: server},
+        tools=[],                                                    # no built-in file/shell/web tools
+        allowed_tools=[f"mcp__{SDK_SERVER}__{t['name']}" for t in TOOLS],
+        setting_sources=[],                                          # ignore any CLAUDE.md / hooks on this machine
+        max_turns=MAX_TOOL_ROUNDS + 2,
+        model=model_name or None,
+        resume=session_id,
+        env={"ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": ""},   # force the claude.ai subscription login
+    )
+    texts: list[str] = []
+    new_session = session_id
+    async for msg in query(prompt=user_text, options=options):
+        if isinstance(msg, AssistantMessage):
+            turn_text = [b.text for b in msg.content if isinstance(b, TextBlock)]
+            has_tool = any(getattr(b, "type", "") == "tool_use" or b.__class__.__name__ == "ToolUseBlock" for b in msg.content)
+            if turn_text and not has_tool:
+                texts = turn_text                         # keep only the last tool-free assistant message
+        elif isinstance(msg, ResultMessage):
+            new_session = msg.session_id or new_session
+            if msg.is_error:
+                raise RuntimeError(msg.result or "Claude returned an error.")
+            if not texts and msg.result:
+                texts = [msg.result]
+    text = "\n".join(texts).strip()
+    used = [t["tool"] for t in trace if t["tool"] in RECOMMENDATION_TOOLS and not t["error"]]
+    if used and not tools.logged_explicitly:
+        db.log_recommendation(RECOMMENDATION_TOOLS[used[0]], (text or user_text)[:500],
+                              {"question": user_text, "tools": [t["tool"] for t in trace]}, tools.snap.week, "agent", tools.db_path)
+    return TurnResult(text, [], trace, new_session)
+
+
+def run_turn_subscription(model_name: str, tools: AgentTools, session_id: Optional[str], user_text: str) -> TurnResult:
+    import asyncio
+    return asyncio.run(_run_turn_sdk(model_name, tools, session_id, user_text))

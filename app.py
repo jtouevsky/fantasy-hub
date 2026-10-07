@@ -336,10 +336,15 @@ EXAMPLES = [
 
 def render_chat(snap: LeagueSnapshot, model: ValueModel, index, trending) -> None:
     cfg = load_config()
-    if not cfg.anthropic_api_key:
-        st.warning("Add `ANTHROPIC_API_KEY` to your `.env` (and restart) to enable the chat agent.")
+    use_api = cfg.chat_backend == "api"
+    if use_api and not cfg.anthropic_api_key:
+        st.warning("CHAT_BACKEND=api needs `ANTHROPIC_API_KEY` in `.env`. Or remove CHAT_BACKEND to use your Claude subscription.")
         return
-    import anthropic
+    if not use_api:
+        ok, why = agent.subscription_available()
+        if not ok:
+            st.warning(f"Chat uses your Claude subscription through Claude Code. {why}")
+            return
 
     client_espn = None if using_demo() else _client()
     tools = agent.AgentTools(
@@ -347,12 +352,14 @@ def render_chat(snap: LeagueSnapshot, model: ValueModel, index, trending) -> Non
         (lambda pid, n: client_espn.fetch_player_news(pid, n)) if client_espn else None,
         index, trending, cfg.db_path)
 
-    st.session_state.setdefault("chat_api", [])      # raw message history sent to Claude
+    st.session_state.setdefault("chat_api", [])      # API backend: raw message history
+    st.session_state.setdefault("chat_session", None)  # subscription backend: conversation id
     st.session_state.setdefault("chat_ui", [])       # [(role, text, trace)]
     top = st.columns([6, 1])
-    top[0].caption(f"Model: {cfg.anthropic_model} · reads your league through tools; never invents stats; read-only.")
+    top[0].caption(("Using your Claude subscription" if not use_api else "Using the Anthropic API")
+                   + f" · model {cfg.anthropic_model} · reads your league through tools; never invents stats; read-only.")
     if top[1].button("Clear"):
-        st.session_state["chat_api"], st.session_state["chat_ui"] = [], []
+        st.session_state["chat_api"], st.session_state["chat_ui"], st.session_state["chat_session"] = [], [], None
         st.rerun()
 
     for role, text, trace in st.session_state["chat_ui"]:
@@ -371,15 +378,19 @@ def render_chat(snap: LeagueSnapshot, model: ValueModel, index, trending) -> Non
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner("Thinking (this can take 10-30 seconds)..."):
             try:
-                res = agent.run_turn(anthropic.Anthropic(api_key=cfg.anthropic_api_key), cfg.anthropic_model, tools,
-                                     st.session_state["chat_api"], prompt)
-            except anthropic.APIError as e:
-                st.error(f"Claude API error: {getattr(e, 'message', e)}")
+                if use_api:
+                    import anthropic
+                    res = agent.run_turn(anthropic.Anthropic(api_key=cfg.anthropic_api_key), cfg.anthropic_model, tools,
+                                         st.session_state["chat_api"], prompt)
+                else:
+                    res = agent.run_turn_subscription(cfg.anthropic_model, tools, st.session_state["chat_session"], prompt)
+            except Exception as e:
+                st.error(f"Chat failed: {getattr(e, 'message', e)}")
                 return
         st.markdown(res.text)
-    st.session_state["chat_api"] = res.history
+    st.session_state["chat_api"], st.session_state["chat_session"] = res.history, res.session_id
     st.session_state["chat_ui"] += [("user", prompt, []), ("assistant", res.text, res.tool_trace)]
     st.rerun()
 

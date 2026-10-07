@@ -20,8 +20,8 @@ cp .env.example .env        # then edit .env (it is git-ignored)
 | `TEAM_ID` | Open your team page; the URL has `teamId=`**`N`**. |
 | `YEAR` | Season year, e.g. `2026`. |
 | `ESPN_S2`, `SWID` | Browser cookies, see below. |
-| `ANTHROPIC_API_KEY` | From console.anthropic.com (only needed for the AI chat tab). |
-| `ANTHROPIC_MODEL` | Defaults to `claude-sonnet-5-5`. |
+| `ANTHROPIC_MODEL` | Model for the AI chat. Defaults to `claude-sonnet-5-5`. |
+| `CHAT_BACKEND` / `ANTHROPIC_API_KEY` | **Optional.** By default the chat uses your Claude subscription (no key). Set `CHAT_BACKEND=api` plus a key to use the pay-per-use API instead. |
 
 ### Getting the ESPN cookies (`ESPN_S2` and `SWID`)
 
@@ -114,6 +114,11 @@ positional need, bye/injury coverage and bench depth are captured automatically.
 non-starters.
 
 ## The AI agent (`agent.py`)
+
+By default the chat runs on **your Claude subscription**: it uses the Claude Agent SDK (`claude-agent-sdk`) through the
+Claude Code app you're already logged into (check with `claude auth status`). No API key is needed, and Claude Code's
+own file/shell tools are switched off so it can only call the league tools below. (`CHAT_BACKEND=api` switches to the
+Anthropic API with a key.)
 
 Claude (`ANTHROPIC_MODEL`, default `claude-sonnet-5-5`) is given these tools: `get_league_overview`, `get_my_roster`,
 `get_team_roster`, `get_free_agents`, `evaluate_trade`, `find_trades`, `optimize_lineup`, `suggest_waiver_moves`,

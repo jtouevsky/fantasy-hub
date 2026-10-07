@@ -109,3 +109,13 @@ def test_tool_loop_is_bounded(tmp_path):
     client = FakeClaude([("tool_use", [tu(i, "get_my_roster")]) for i in range(agent.MAX_TOOL_ROUNDS + 2)])
     res = agent.run_turn(client, "m", t, [], "loop forever")
     assert "tool-call limit" in res.text and len(client.calls) == agent.MAX_TOOL_ROUNDS
+
+
+def test_chat_backend_defaults_to_subscription_and_ignores_placeholder_key(monkeypatch):
+    import config
+    monkeypatch.delenv("CHAT_BACKEND", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "your_anthropic_api_key_here")
+    cfg = config.load_config()
+    assert cfg.chat_backend == "subscription" and cfg.anthropic_api_key == ""
+    monkeypatch.setenv("CHAT_BACKEND", "api")
+    assert config.load_config().chat_backend == "api"

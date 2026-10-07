@@ -25,6 +25,7 @@ class Config:
     team_id: int
     anthropic_api_key: str
     anthropic_model: str
+    chat_backend: str            # 'subscription' (Claude Code login, default) or 'api'
     cache_ttl: int
     db_path: str
 
@@ -32,7 +33,7 @@ class Config:
         return (
             f"Config(league_id={self.league_id}, year={self.year}, team_id={self.team_id}, "
             f"espn_s2={'set' if self.espn_s2 else 'MISSING'}, swid={'set' if self.swid else 'MISSING'}, "
-            f"anthropic_key={'set' if self.anthropic_api_key else 'MISSING'}, model={self.anthropic_model})"
+            f"anthropic_key={'set' if self.anthropic_api_key else 'unset'}, backend={self.chat_backend}, model={self.anthropic_model})"
         )
 
     def missing_espn(self) -> list[str]:
@@ -67,6 +68,7 @@ def load_config() -> Config:
         team_id=_int("TEAM_ID"),
         anthropic_api_key=_real(os.getenv("ANTHROPIC_API_KEY")),
         anthropic_model=_real(os.getenv("ANTHROPIC_MODEL")) or "claude-sonnet-5-5",
+        chat_backend="api" if os.getenv("CHAT_BACKEND", "").strip().lower() == "api" else "subscription",
         cache_ttl=_int("CACHE_TTL_SECONDS", 300),
         db_path=os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "fantasy_hub.db")),
     )
