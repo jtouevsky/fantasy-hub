@@ -17,6 +17,7 @@ from models import LeagueSnapshot, PlayerInfo
 from optimizer import availability, plan_lineup
 from valuation import ValueModel
 import sleeper
+import trades
 import waivers
 
 st.set_page_config(page_title="Fantasy Hub", page_icon="🏈", layout="wide")
@@ -207,6 +208,74 @@ def render_waivers(snap: LeagueSnapshot, fas, model, index, trending) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Trades
+# ---------------------------------------------------------------------------
+def _team_label(t) -> str:
+    first = t.owners[0].first_name if t.owners else ""
+    return f"{first} - {t.name}" if first else t.name
+
+
+def _pl(p: PlayerInfo) -> str:
+    return f"{p.name} ({p.position}, {p.pro_team})"
+
+
+def _show_trade(ev: trades.TradeEval, snap: LeagueSnapshot, key: str) -> None:
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Value split (you / them)", f"{ev.my_share:.0f} / {ev.their_share:.0f}")
+    c2.metric("Your lineup", f"{ev.mine.delta:+.1f} pts/wk")
+    c3.metric(f"{ev.other_team}", f"{ev.theirs.delta:+.1f} pts/wk", f"accept: {ev.acceptance}", delta_color="off")
+    st.markdown(trades.describe(ev))
+    if st.button("Save to recommendation log", key=f"log_{key}"):
+        db.log_recommendation("trade", f"{_names_short(ev.give)} for {_names_short(ev.get)} ({ev.other_team})",
+                              {"split": [ev.my_share, ev.their_share], "acceptance": ev.acceptance}, snap.week, "ui",
+                              load_config().db_path)
+        st.toast("Saved.")
+
+
+def _names_short(ps) -> str:
+    return " + ".join(p.name for p in ps)
+
+
+def render_trades(snap: LeagueSnapshot, model: ValueModel) -> None:
+    me = snap.my_team
+    others = [t for t in snap.teams if t.team_id != me.team_id]
+    labels = {_team_label(t): t for t in others}
+
+    mode = st.radio("What do you want to do?", ["Find me a trade", "Evaluate a specific trade"], horizontal=True)
+    other = labels[st.selectbox("Trade partner", list(labels), key="trade_partner")]
+    my_by = {_pl(p): p for p in sorted(me.roster, key=lambda p: -model.value(p))}
+    their_by = {_pl(p): p for p in sorted(other.roster, key=lambda p: -model.value(p))}
+
+    if mode == "Evaluate a specific trade":
+        give = st.multiselect("You give", list(my_by), key="ev_give")
+        get = st.multiselect(f"You get from {other.name}", list(their_by), key="ev_get")
+        if give and get:
+            _show_trade(trades.evaluate_trade(snap, model, other, [my_by[g] for g in give], [their_by[g] for g in get]),
+                        snap, "eval")
+        else:
+            st.caption("Pick at least one player on each side.")
+        return
+
+    offering = st.multiselect("Player(s) you're offering", list(my_by), max_selections=1, key="find_offer")
+    c1, c2 = st.columns(2)
+    split = c1.slider("Target split in your favor", 50, 70, 60, help="60 = you get 60% of the combined value.")
+    want = c2.multiselect("Only ask for these positions (optional)", sorted({p.position for p in other.roster}))
+    if not offering:
+        st.caption("Choose who you'd like to trade away; I'll search 1-for-1, 2-for-1 and 1-for-2 packages.")
+        return
+    found = trades.find_trades(snap, model, other, [my_by[offering[0]]], float(split), set(want) or None, 8)
+    if not found:
+        st.warning("No reasonable package found near that split. Try a lower target or remove the position filter.")
+    for i, ev in enumerate(found):
+        icon = {"Likely": "🟢", "Maybe": "🟡", "Unlikely": "🔴"}[ev.acceptance]
+        with st.expander(f"{icon} {ev.kind}: get {_names_short(ev.get)}  ·  {ev.my_share:.0f}/{ev.their_share:.0f}  ·  score {ev.score:.0f}",
+                         expanded=i == 0):
+            _show_trade(ev, snap, f"find{i}")
+    st.caption("Ranking = closeness to your target split, minus penalties for lopsided deals and for deals that hurt their lineup "
+               "(so they're more likely to say yes), plus credit for improving yours. See README.")
+
+
+# ---------------------------------------------------------------------------
 # Shell
 # ---------------------------------------------------------------------------
 def render_setup_help(err: str | None = None) -> None:
@@ -257,13 +326,15 @@ def main() -> None:
                + f" · {snap.bench_slots} bench")
 
     fas, model, index, trending = load_context(snap)
-    tab_dash, tab_lineup, tab_waiver = st.tabs(["Dashboard", "Lineup", "Waivers"])
+    tab_dash, tab_lineup, tab_waiver, tab_trade = st.tabs(["Dashboard", "Lineup", "Waivers", "Trades"])
     with tab_dash:
         render_dashboard(snap)
     with tab_lineup:
         render_lineup(snap)
     with tab_waiver:
         render_waivers(snap, fas, model, index, trending)
+    with tab_trade:
+        render_trades(snap, model)
 
 
 main()
