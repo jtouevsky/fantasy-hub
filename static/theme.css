@@ -73,12 +73,7 @@ a { color: var(--accent); }
           background: linear-gradient(160deg, color-mix(in srgb, var(--tc, #6b7280) 38%, var(--solid)), color-mix(in srgb, var(--tc, #6b7280) 14%, var(--solid)));
           box-shadow: 0 0 0 2px color-mix(in srgb, var(--tc, #6b7280) 80%, transparent), 0 0 0 4px var(--ring-gap); display: grid; place-items: center; }
 .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 8%; }
-.avatar.logo { background: var(--logo-bg); }
-.avatar.logo img { object-fit: contain; padding: 16%; object-position: center; }
 .avatar span { font-weight: 700; font-size: calc(var(--s, 44px) * .34); color: color-mix(in srgb, var(--tc, #6b7280) 70%, var(--ink)); letter-spacing: .02em; }
-.logo { display: inline-grid; place-items: center; width: var(--s, 22px); height: var(--s, 22px); border-radius: 50%; background: var(--logo-bg); flex: none; vertical-align: middle; }
-.logo img { width: 78%; height: 78%; object-fit: contain; }
-.logo b { font-size: calc(var(--s, 22px) * .38); color: var(--ink-2); }
 
 /* ---------- section headings ---------- */
 .sec { display: flex; align-items: baseline; gap: 12px; margin: 30px 0 12px; }
@@ -354,3 +349,14 @@ div[role="dialog"] h1, div[role="dialog"] h2 { color: var(--ink); } div[role="di
   .st-key-navbar { width: auto !important; }
   .st-key-navbar [role="radiogroup"] { max-width: none !important; }
 }
+
+/* ---------- TeamBadge: one component for every NFL logo ---------- */
+.tbadge { --ring: 1.5px; display: inline-grid; place-items: center; flex: none; box-sizing: border-box; width: var(--s, 22px); height: var(--s, 22px);
+  border-radius: 50%; overflow: hidden; background: var(--logo-bg); border: var(--ring) solid var(--tc, transparent); vertical-align: middle; line-height: 0; }
+.tbadge img { display: block; width: 100%; height: 100%; margin: 0; padding: 0; object-fit: contain; object-position: center;
+  transform: translate(var(--dx, 0), var(--dy, 0)) scale(var(--k, .72)); transform-origin: 50% 50%; }
+.tbadge.fb { background: var(--solid-2); --tc: var(--line-strong); }
+.tbadge.fb b { font-family: var(--f-ui); font-weight: 700; line-height: 1; letter-spacing: .02em; color: var(--ink-2); font-size: calc(var(--s, 22px) * .3); }
+/* fantasy-team logos (custom ESPN uploads): same centering rules, no artwork measurements available */
+.avatar.logo { background: var(--logo-bg); }
+.avatar.logo img { box-sizing: border-box; padding: 14%; object-fit: contain; object-position: center; display: block; }

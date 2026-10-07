@@ -99,6 +99,7 @@ class Brand:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path
         self.ok: dict[str, bool] = {}
+        self._geo: Optional[dict] = None
 
     def prefetch(self, players: Iterable[PlayerInfo] = (), teams: Iterable[TeamInfo] = (), widths=(120,)) -> None:
         urls = [assets.headshot_url(p.player_id, w) for p in players if p.position != "D/ST" for w in widths]
@@ -115,25 +116,38 @@ class Brand:
     def color(self, abbr: str) -> str:
         return assets.usable_color(assets.team(abbr, self.db_path).color)
 
-    def logo(self, abbr: str, size: int = 22) -> str:
+    def team_badge(self, abbr: str, size: int = 22, ring: bool = True) -> str:
+        """The one NFL team badge used everywhere (rows, cards, headers, chips).
+        Fixed box (no layout shift), ring drawn as the badge's own border at one thickness for every size, artwork centered
+        and sized from its measured visible bounds, and a neutral abbreviation fallback if the logo can't load."""
         t = assets.team(abbr, self.db_path)
         url = assets.team_logo(abbr, self.db_path)
-        inner = (f'<img src="{esc(url)}" alt="" width="{size}" height="{size}" loading="lazy" decoding="async">'
-                 if url and self._good(url) else f"<b>{esc(abbr[:3])}</b>")
-        return f'<span class="logo" style="--s:{size}px" title="{esc(t.name)}">{inner}</span>'
+        ring_css = f"--tc:{self.color(abbr)};" if ring else "--tc:transparent;"
+        label = esc(t.name if t.abbr != "NFL" else (abbr or "NFL"))
+        if url and self._good(url):
+            if self._geo is None:
+                self._geo = assets.logo_geometry(self.db_path)
+            dx, dy, k = assets.logo_transform(self._geo.get(t.abbr))
+            inner = (f'<img src="{esc(url)}" alt="" width="{size}" height="{size}" loading="lazy" decoding="async" '
+                     f'style="--dx:{dx}%;--dy:{dy}%;--k:{k}">')
+            cls = "tbadge"
+        else:
+            inner = f"<b>{esc((abbr or '?')[:3])}</b>"
+            cls = "tbadge fb"
+        return f'<span class="{cls}" style="--s:{size}px;{ring_css}" role="img" aria-label="{label}" title="{label}">{inner}</span>'
+
+    logo = team_badge          # backwards-compatible name
 
     def nfl_tag(self, abbr: str) -> str:
         if not abbr or abbr == "None":
             return ""
-        return f'<span style="display:inline-flex;align-items:center;gap:5px">{self.logo(abbr, 16)}{esc(abbr)}</span>'
+        return f'<span style="display:inline-flex;align-items:center;gap:5px">{self.team_badge(abbr, 18)}{esc(abbr)}</span>'
 
     # ---- players ----
     def avatar(self, p: PlayerInfo, size: int = 44) -> str:
         tc = self.color(p.pro_team)
         if p.position == "D/ST":
-            url = assets.team_logo(p.pro_team, self.db_path)
-            inner = (f'<img src="{esc(url)}" alt="" loading="lazy" decoding="async">' if url and self._good(url) else f"<span>{esc(p.pro_team)}</span>")
-            return f'<span class="avatar logo" style="--s:{size}px;--tc:{tc}">{inner}</span>'
+            return self.team_badge(p.pro_team, size)
         w = 120 if size <= 64 else 360
         url = assets.headshot_url(p.player_id, w)
         inner = (f'<span>{esc(assets.initials(p.name))}</span>'
