@@ -34,6 +34,13 @@ def render(ctx: Ctx) -> None:
         with c1:
             ai_button("Ask AI why", f"pl_{i}", f"Should I add {s.add.name} and drop {s.drop.name}? Use suggest_waiver_moves and the news.", "Waiver move review")
 
+    watched = [p for pid in sorted(ctx.watchlist) if (p := ctx.everyone().get(pid))]
+    if watched:
+        html(ui.section("Watchlist", f"{len(watched)} saved player{'s' if len(watched) != 1 else ''}"))
+        def where(p):
+            o = ctx.owner_of(p)
+            return " · on your team" if o and o.team_id == me.team_id else f" · on {o.name}" if o else " · free agent"
+        player_list(ctx, "watch", [(p, {"slot": "", "show_actual": False, "note": where(p)}) for p in watched])
     html(ui.section("Browse free agents"))
     f1, f2 = st.columns([3, 2], vertical_alignment="bottom")
     positions = sorted({p.position for p in ctx.fas})

@@ -51,7 +51,7 @@ def render(ctx: Ctx) -> None:
             env = ctx.edge.game_env.get(tm)
             if env and frozenset((env.team, env.opp)) not in seen:
                 seen.add(frozenset((env.team, env.opp)))
-                html(f'<div style="margin:6px 0"><b>{ui.esc(env.team)} vs {ui.esc(env.opp)}</b> <span class="fresh">{ui.esc(env.kickoff)}</span>{ui.game_env_html(env)}</div>')
+                html(f'<div style="margin:6px 0">{b.team_badge(env.team, 26)} <b>{ui.esc(env.team)}</b> vs {b.team_badge(env.opp, 26)} <b>{ui.esc(env.opp)}</b> <span class="fresh">{ui.esc(env.kickoff)}</span>{ui.game_env_html(env)}</div>')
     html(ui.section("Starters head to head", "your side left"))
     duels = []
     for (slot, pa), (_, pb) in zip(a_rows, b_rows):

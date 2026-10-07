@@ -171,3 +171,32 @@ def initials(name: str) -> str:
     if len(parts) == 1:
         return parts[0][:2].upper()
     return (parts[0][0] + parts[-1][0]).upper()
+
+
+# ---- fantasy-team logos (ESPN custom uploads need the league cookies, so we fetch them server-side) ----
+def fantasy_logo_src(url: str, cookies: Optional[dict] = None, db_path: Optional[str] = None, px: int = 160) -> Optional[str]:
+    """Image source for a fantasy team's logo. Default ESPN SVG logos are public and used as-is; custom uploads are downloaded once
+    with the league cookies, center-cropped to a square, resized and cached as a small data URI (the cookies never reach the browser)."""
+    if not url:
+        return None
+    if url.endswith(".svg"):
+        return url if verified([url], db_path).get(url) else None
+    key = f"assets:flogo:{hash(url) & 0xffffffff:x}"
+    cached = db.cache_get(key, IMAGE_TTL, db_path)
+    if cached is not None:
+        return cached or None
+    try:
+        import base64, io
+        from PIL import Image
+        r = requests.get(url, cookies=cookies or None, timeout=15)
+        r.raise_for_status()
+        im = Image.open(io.BytesIO(r.content)).convert("RGB")
+        s = min(im.size)
+        im = im.crop(((im.width - s) // 2, (im.height - s) // 2, (im.width + s) // 2, (im.height + s) // 2)).resize((px, px))
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=84)
+        src = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        src = ""                                   # remembered as 'unavailable' so we don't retry on every render
+    db.cache_set(key, src, db_path)
+    return src or None

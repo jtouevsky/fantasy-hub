@@ -28,7 +28,12 @@ def apply_theme(cfg) -> None:
     mode = theme.get_mode(cfg.db_path)
     accent, ink = None, "#ffffff"
     fav = theme.get_accent_team(cfg.db_path)
-    if fav:
+    if fav == "MY_TEAM":
+        from ui import Brand
+        tid = cfg.team_id or 1
+        accent = Brand._FANTASY[(tid - 1) % len(Brand._FANTASY)]
+        ink = assets.on_color(accent)
+    elif fav:
         t = assets.team(fav, cfg.db_path)
         if t.abbr != "NFL":
             accent = assets.usable_color(t.color)
@@ -61,7 +66,10 @@ def header(ctx: Ctx, cfg) -> bool:
             f'<span class="chip plain" style="padding-left:4px">{ctx.brand.team_avatar(ctx.me, 22)}&nbsp;{ui.esc(ctx.me.name)}</span>{ui.chip(ctx.me.record, "", "sports_score")}{demo_chip}'
             f'{"" if ctx.demo else ui.fresh(ctx.age, cfg.cache_ttl)}</div>')
     everyone = sorted(ctx.everyone().values(), key=lambda p: p.name)
-    labels = {f"{p.name} · {p.position} · {p.pro_team}": p.player_id for p in everyone}
+    def avail(p):
+        o = ctx.owner_of(p)
+        return "your team" if o and o.team_id == ctx.me.team_id else f"on {o.owner_label.split()[0] if o and o.owner_label else o.name}" if o else "free agent"
+    labels = {f"{p.name} · {p.position} · {p.pro_team} · {avail(p)}": p.player_id for p in everyone}
 
     def on_search():
         sel = st.session_state.get("search")
@@ -79,14 +87,21 @@ def header(ctx: Ctx, cfg) -> bool:
             theme.set_mode(mode, cfg.db_path)
             st.rerun()
         teams = assets.nfl_teams(cfg.db_path)
-        opts = ["None"] + sorted(t.name for t in teams.values())
+        opts = ["None", "My fantasy team"] + sorted(t.name for t in teams.values())
         cur = theme.get_accent_team(cfg.db_path)
-        cur_name = teams[cur].name if cur in teams else "None"
+        cur_name = "My fantasy team" if cur == "MY_TEAM" else teams[cur].name if cur in teams else "None"
         pick = st.selectbox("Accent team", opts, index=opts.index(cur_name), key="accent_sel", help="Tints selected states and highlights with a favorite NFL team's color.")
-        new = next((a for a, t in teams.items() if t.name == pick), "")
+        new = "MY_TEAM" if pick == "My fantasy team" else next((a for a, t in teams.items() if t.name == pick), "")
         if new != cur:
             theme.set_accent_team(new, cfg.db_path)
             st.rerun()
+    recents = [pid for pid in st.session_state.get("recent_players", []) if pid in ctx.everyone()][:6]
+    if recents:
+        with st.container(horizontal=True, key="recents"):
+            st.html('<span class="fresh" style="align-self:center">Recent</span>')
+            for pid in recents:
+                p = ctx.everyone()[pid]
+                st.button(p.name.split()[-1] if p.position != "D/ST" else p.name.split()[0], key=f"recent_{pid}", icon=":material/history:", on_click=Ctx.open_player, args=(pid,), help=f"Open {p.name}")
     return refresh
 
 
@@ -141,7 +156,10 @@ def main() -> None:
     if "ai_sheet" in st.session_state:
         dialogs.ai_sheet(ctx, st.session_state.pop("ai_sheet"))
     elif "open_player" in st.session_state:
-        dialogs.player_sheet(ctx, st.session_state.pop("open_player"))
+        pid = st.session_state.pop("open_player")
+        rec = [x for x in st.session_state.get("recent_players", []) if x != pid]
+        st.session_state["recent_players"] = [pid] + rec[:7]
+        dialogs.player_sheet(ctx, pid)
 
 
 main()

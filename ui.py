@@ -172,15 +172,17 @@ def lock_state(p: PlayerInfo, now: Optional[datetime] = None) -> str:
 class Brand:
     """Resolves logos/headshots once per page render, verified server-side."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, cookies: Optional[dict] = None):
         self.db_path = db_path
+        self.cookies = cookies                      # ESPN league cookies, used server-side only (never put into markup)
+        self._flogo: dict[str, Optional[str]] = {}
+        self.watch: set[int] = set()                # ESPN ids on the user's watchlist
         self.ok: dict[str, bool] = {}
         self._geo: Optional[dict] = None
 
     def prefetch(self, players: Iterable[PlayerInfo] = (), teams: Iterable[TeamInfo] = (), widths=(120,)) -> None:
         urls = [assets.headshot_url(p.player_id, w) for p in players if p.position != "D/ST" for w in widths]
         urls += [assets.team_logo(p.pro_team, self.db_path) for p in players if p.position == "D/ST"]
-        urls += [t.logo for t in teams if t.logo and not t.logo.endswith(".svg")]
         self.ok.update(assets.verified(urls, self.db_path))
 
     def _good(self, url: str) -> bool:
@@ -214,6 +216,12 @@ class Brand:
 
     logo = team_badge          # backwards-compatible name
 
+    def team_banner(self, abbr: str) -> str:
+        """NFL team identity strip for profile headers: big badge, official name, localized team color."""
+        t = assets.team(abbr, self.db_path)
+        return (f'<div class="tbanner" style="--tc:{self.color(abbr)}">{self.team_badge(abbr, 46)}<div><b>{esc(t.name)}</b>'
+                f'<small>{esc(t.abbr)}</small></div></div>')
+
     def nfl_tag(self, abbr: str) -> str:
         if not abbr or abbr == "None":
             return ""
@@ -234,10 +242,17 @@ class Brand:
     _FANTASY = ["#4f74e3", "#c2410c", "#0f766e", "#7c3aed", "#b45309", "#be185d", "#15803d", "#0369a1", "#a21caf", "#b91c1c", "#4d7c0f", "#475569"]
 
     def team_avatar(self, t: TeamInfo, size: int = 56) -> str:
+        """A fantasy team's own logo (custom upload or ESPN default), falling back to initials on a per-team identity color."""
         tc = self._FANTASY[(t.team_id - 1) % len(self._FANTASY)]
-        if t.logo and not t.logo.endswith(".svg") and self._good(t.logo):
-            return f'<span class="avatar logo" style="--s:{size}px;--tc:{tc}"><img src="{esc(t.logo)}" alt="" loading="lazy" decoding="async"></span>'
-        return f'<span class="avatar" style="--s:{size}px;--tc:{tc}" title="{esc(t.name)}"><span>{esc(assets.initials(t.name))}</span></span>'
+        if t.logo not in self._flogo:
+            self._flogo[t.logo] = assets.fantasy_logo_src(t.logo, self.cookies, self.db_path)
+        src = self._flogo[t.logo]
+        label = esc(t.name)
+        if src:
+            cls = "avatar flogo" if src.startswith("data:") else "avatar logo"
+            return (f'<span class="{cls}" style="--s:{size}px;--tc:{tc}" role="img" aria-label="{label}" title="{label}">'
+                    f'<img src="{src}" alt="" width="{size}" height="{size}" loading="lazy" decoding="async"></span>')
+        return f'<span class="avatar" style="--s:{size}px;--tc:{tc}" role="img" aria-label="{label}" title="{label}"><span>{esc(assets.initials(t.name))}</span></span>'
 
     # ---- chips ----
     def status_chip(self, p: PlayerInfo) -> str:
@@ -271,7 +286,7 @@ class Brand:
             f'<div class="row {cls}" role="listitem" style="--tc:{self.color(p.pro_team)}">'
             f'<div class="who">{f"<span class=slot>{esc(slot)}</span>" if slot else ""}{self.avatar(p, 44)}'
             f'<div style="min-width:0"><div class="nm">{esc(p.name)}</div>'
-            f'<div class="sub">{chip(p.position, "pos")}{self.nfl_tag(p.pro_team)}{self.status_chip(p)}{lock_chip}{edge_chip}{tag_chips(p)}{esc(note)}</div>{edge_why(p)}{edge_context(p)}</div></div>'
+            f'<div class="sub">{chip(p.position, "pos")}{self.nfl_tag(p.pro_team)}{self.status_chip(p)}{lock_chip}{edge_chip}{tag_chips(p)}{chip('Watching', '', 'star') if p.player_id in self.watch else ''}{esc(note)}</div>{edge_why(p)}{edge_context(p)}</div></div>'
             f'<div class="opp">{opp}<small>{esc(kl) if not p.on_bye else ""}</small></div>'
             f'<div class="stat{" edge" if p.has_edge and not p.on_bye else ""}"><b>{proj}</b>{proj_label}</div>{stat2}</div>'
         )

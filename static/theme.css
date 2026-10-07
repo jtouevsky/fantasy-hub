@@ -407,3 +407,14 @@ details.why.ctx summary { background: transparent; border: 1px dashed var(--line
 
 /* rows grow when 'why' is open: keep the avatar aligned with the name instead of floating mid-row */
 .row .who { align-items: flex-start; } .row .slot { margin-top: 15px; }
+
+/* custom fantasy-team logos fill the circle; ESPN default SVGs sit inside it */
+.avatar.flogo { background: var(--solid-2); }
+.avatar.flogo img { object-fit: cover; padding: 0; }
+
+/* NFL team banner (profile headers): team color stays inside this strip */
+.tbanner { display: inline-flex; align-items: center; gap: 12px; padding: 8px 16px 8px 8px; border-radius: var(--r-pill); border: 1px solid color-mix(in srgb, var(--tc) 45%, var(--line));
+  background: linear-gradient(100deg, color-mix(in srgb, var(--tc) 16%, var(--solid)), var(--solid) 70%); }
+.tbanner b { display: block; font-family: var(--f-disp); font-size: 20px; line-height: 1.05; } .tbanner small { color: var(--ink-3); font-weight: 600; letter-spacing: .08em; }
+[class*="st-key-recent_"] button { min-height: 30px !important; padding: 0 12px !important; } [class*="st-key-recent_"] button p { font-size: 12.5px !important; }
+.kv > div .hint { display: block; color: var(--ink-3); font-size: 11px; margin-top: 3px; line-height: 1.3; }

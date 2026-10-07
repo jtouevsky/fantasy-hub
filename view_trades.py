@@ -14,7 +14,7 @@ _ACC = {"Likely": ("good", "thumb_up"), "Maybe": ("warn", "help"), "Unlikely": (
 
 def _side(b, players) -> str:
     return "".join(f'<div class="p" style="--tc:{b.color(p.pro_team)}">{b.avatar(p, 40)}<div style="min-width:0"><div class="nm">{ui.esc(p.name)}</div>'
-                   f'<div class="sub">{ui.chip(p.position, "pos")} {ui.esc(p.pro_team)}{" · " + p.injury_status.replace("_", " ").title() if p.injury_status != "ACTIVE" else ""}{ui.tag_chips(p)}</div></div></div>'
+                   f'<div class="sub">{ui.chip(p.position, "pos")} {b.nfl_tag(p.pro_team)}{" · " + p.injury_status.replace("_", " ").title() if p.injury_status != "ACTIVE" else ""}{ui.tag_chips(p)}</div></div></div>'
                    for p in players)
 
 

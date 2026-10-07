@@ -50,6 +50,7 @@ class Ctx:
     edge: Optional[EngineResult] = None    # edge-engine output for this week (None in demo mode / if it failed)
     events: list = field(default_factory=list)   # AI-parsed news events
     scan_status: str = ""
+    watchlist: set = field(default_factory=set)
 
     # ---- convenience ----
     @property
@@ -191,8 +192,9 @@ def load_ctx(force: bool = False) -> Ctx:
         model = ValueModel(snap, fas)
         st.session_state["_model"] = {"key": mkey, "model": model}
 
-    brand = Brand(cfg.db_path)
-    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age, edge, events, scan_status)
+    brand = Brand(cfg.db_path, {"espn_s2": cfg.espn_s2, "SWID": cfg.swid} if not demo and cfg.espn_s2 else None)
+    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path))
+    brand.watch = ctx.watchlist
     return ctx
 
 
@@ -225,3 +227,21 @@ def _maybe_scan(snap, fas, edge, cfg, force: bool) -> str:
     if sc.last_finished:
         return f"AI news scan finished {int((time.time() - sc.last_finished) / 60)} min ago"
     return ""
+
+
+def load_watchlist(db_path) -> set:
+    import json
+    try:
+        return set(json.loads(db.setting_get("watchlist", "[]", db_path)))
+    except ValueError:
+        return set()
+
+
+def toggle_watch(pid: int, db_path) -> bool:
+    """Add/remove a player from the watchlist. Returns True if he is now watched."""
+    import json
+    w = load_watchlist(db_path)
+    now = pid not in w
+    (w.add if now else w.discard)(pid)
+    db.setting_set("watchlist", json.dumps(sorted(w)), db_path)
+    return now
