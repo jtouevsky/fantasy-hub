@@ -15,6 +15,9 @@ from config import load_config
 from league_client import LeagueClient, LeagueConnectionError, get_free_agents, get_snapshot
 from models import LeagueSnapshot, PlayerInfo
 from optimizer import availability, plan_lineup
+from valuation import ValueModel
+import sleeper
+import waivers
 
 st.set_page_config(page_title="Fantasy Hub", page_icon="🏈", layout="wide")
 
@@ -146,6 +149,64 @@ def render_lineup(snap: LeagueSnapshot) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared analysis context (value model, free agents, Sleeper)
+# ---------------------------------------------------------------------------
+FA_POSITIONS = ["QB", "RB", "WR", "TE", "K", "D/ST"]
+
+
+def load_context(snap: LeagueSnapshot):
+    """Free agents for every position the league starts, a ValueModel, and Sleeper trending (best effort)."""
+    flexy = {"FLEX", "OP", "RB/WR", "WR/TE"} & set(snap.starter_slots)
+    positions = [pos for pos in FA_POSITIONS
+                 if pos in snap.starter_slots or (pos in ("RB", "WR", "TE") and flexy) or (pos == "QB" and "OP" in flexy)]
+    fas = [p for pos in positions for p in load_free_agents(pos, 30)]
+    model = ValueModel(snap, fas)
+    index, trending = None, {}
+    if not using_demo():
+        try:
+            index = sleeper.SleeperIndex(sleeper.load_players(load_config().db_path))
+            trending = sleeper.trending_counts(index, "add", load_config().db_path)
+        except Exception as e:  # Sleeper is a nice-to-have
+            st.sidebar.caption(f"Sleeper unavailable: {type(e).__name__}")
+    return fas, model, index, trending
+
+
+# ---------------------------------------------------------------------------
+# Waivers
+# ---------------------------------------------------------------------------
+def render_waivers(snap: LeagueSnapshot, fas, model, index, trending) -> None:
+    st.markdown("#### Suggested add / drop moves")
+    sugg = waivers.suggest_add_drops(snap, model, fas, index, trending)
+    if not sugg:
+        st.success("No add/drop is worth making right now.")
+    for r in sugg:
+        fire = " 🔥 trending" if r.trending_adds else ""
+        st.info(f"**Add {r.add.name}** ({r.add.position}, {r.add.pro_team}){fire}  ->  drop **{r.drop.name}**  \n"
+                f"**{r.ppg_gain:+.1f} pts/week** rest of season · {r.weekly_gain:+.1f} this week  \n"
+                f"{r.reason}  \n_{r.action()}_")
+
+    ranks = waivers.rank_free_agents(model, fas, index, trending)
+    pos_filter = st.selectbox("Position", ["All"] + sorted({r.player.position for r in ranks}), key="fa_pos")
+    ranks = [r for r in ranks if pos_filter in ("All", r.player.position)]
+
+    def table(rows):
+        return pd.DataFrame([{
+            "Player": r.player.name, "Pos": r.player.position, "NFL": r.player.pro_team,
+            "Status": _status_label(r.player), "ROS value": round(r.ros_value, 1), "This wk": round(r.week_value, 1),
+            "Owned %": r.player.percent_owned, "Trending adds (24h)": r.trending_adds or None,
+            "Breakout": "🔥" if r.breakout else "",
+        } for r in rows])
+
+    a, b = st.columns(2)
+    a.markdown("#### Best rest-of-season value")
+    a.dataframe(table(sorted(ranks, key=lambda r: -r.ros_value)[:20]), hide_index=True, width="stretch")
+    b.markdown("#### Best this week")
+    b.dataframe(table(sorted(ranks, key=lambda r: -r.week_value)[:20]), hide_index=True, width="stretch")
+    st.caption("ROS value = points over a replacement-level player across the remaining games (see README). "
+               "Breakout = trending on Sleeper and under 50% owned.")
+
+
+# ---------------------------------------------------------------------------
 # Shell
 # ---------------------------------------------------------------------------
 def render_setup_help(err: str | None = None) -> None:
@@ -195,11 +256,14 @@ def main() -> None:
                + ", ".join(f"{n}× {s}" for s, n in snap.starter_slots.items())
                + f" · {snap.bench_slots} bench")
 
-    tab_dash, tab_lineup = st.tabs(["Dashboard", "Lineup"])
+    fas, model, index, trending = load_context(snap)
+    tab_dash, tab_lineup, tab_waiver = st.tabs(["Dashboard", "Lineup", "Waivers"])
     with tab_dash:
         render_dashboard(snap)
     with tab_lineup:
         render_lineup(snap)
+    with tab_waiver:
+        render_waivers(snap, fas, model, index, trending)
 
 
 main()
