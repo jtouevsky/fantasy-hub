@@ -24,6 +24,7 @@ TRADEABLE = ("QB", "RB", "WR", "TE")
 GOOD_FOR_ME = 10.0            # weighted rest-of-season lineup points that make a trade clearly good for me
 MIN_TARGET_GAIN = 6.0         # a player I'd want must add at least this much to my lineup if he came for free
 R_FLOOR = 0.36                # their market share below this can't clear acceptance: skip without an exact evaluation
+SPECULATIVE_GAP = 0.45        # model value this far above the market value (as a share of market value) is flagged speculative
 MAX_EXACT_PER_TARGET = 6
 SKILL_PAIR_POOL = 10
 
@@ -95,6 +96,7 @@ class TradeEval:
     ladder: list[LadderStep] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     score: float = 0.0
+    speculative: bool = False                        # my model is far more bullish than the consensus on someone I'd receive
 
     @property
     def kind(self) -> str:
@@ -170,6 +172,11 @@ def evaluate(world: TradeWorld, other: TeamInfo, give: list[PlayerInfo], get: li
         ev.notes.append(f"You'd have to cut {my_drop.name} to fit this (your least useful non-IR player).")
     if th_drop:
         ev.notes.append(f"{other.owner_label.split()[0] if other.owner_label else other.name} would have to cut {th_drop.name}; that cost is included in his side.")
+    for p in get:
+        edge = soft(s.healthy_par(p)) - soft(m.value(p))
+        if m.row(p).has_market and edge > SPECULATIVE_GAP * max(soft(m.value(p)), 10.0):
+            ev.speculative = True
+            ev.notes.append(f"Speculative: my model is far more bullish on {p.name} than the consensus is; treat the gain as a hunch, not a sure thing.")
     for p in give:
         if p.lineup_slot == "IR":
             ev.notes.append(f"{p.name} is in an IR slot, so moving him frees no bench spot for you.")
