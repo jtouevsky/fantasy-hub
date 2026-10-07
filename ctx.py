@@ -20,7 +20,6 @@ from config import Config, load_config
 from league_client import LeagueClient, get_activity, get_free_agents, get_market, get_player_history, get_snapshot
 from models import LeagueSnapshot, PlayerInfo, TeamInfo
 from optimizer import LineupPlan, plan_lineup
-from ui import Brand
 from edge import apply as edge_apply, live as edge_live, news_ai
 from edge.engine import EngineResult
 from valuation import ValueModel
@@ -64,7 +63,6 @@ class Ctx:
     cfg: Config
     demo: bool
     snap: LeagueSnapshot
-    brand: Brand
     model: ValueModel
     fas: list[PlayerInfo]
     index: Optional[sleeper.SleeperIndex]
@@ -237,9 +235,7 @@ def _load_ctx(force: bool = False) -> Ctx:
 
     hub = _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force)
 
-    brand = Brand(cfg.db_path, {"espn_s2": cfg.espn_s2, "SWID": cfg.swid} if not demo and cfg.espn_s2 else None)
-    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path), hub=hub)
-    brand.watch = ctx.watchlist
+    ctx = Ctx(cfg, demo, snap, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path), hub=hub)
     return ctx
 
 

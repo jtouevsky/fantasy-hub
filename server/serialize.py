@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 import assets
-import ui
+import fmt as ui
 from ctx import Ctx
 from models import PlayerInfo, TeamInfo
 

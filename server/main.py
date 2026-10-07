@@ -24,7 +24,7 @@ import news as news_mod
 import strategy as strategy_mod
 import theme
 import trading
-import ui
+import fmt as ui
 from config import load_config
 from edge import live as edge_live, odds as odds_mod, usage as edge_usage
 from edge.settings import load_params
@@ -33,7 +33,26 @@ from league_client import LeagueConnectionError
 from optimizer import availability, current_lineup
 from server import serialize as S
 
-app = FastAPI(title="Fantasy Hub API", docs_url="/api/docs", openapi_url="/api/openapi.json")
+import threading
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    """Warm everything expensive in the background at startup (ESPN snapshot, edge engine, value model, hub, NFL team art) so the first page load is already cached."""
+    def warm():
+        try:
+            cfg = load_config()
+            if cx.using_demo() or not cfg.missing_espn():
+                cx.get_ctx()
+                _nfl_meta(cfg)
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Fantasy Hub API", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")
 
 
