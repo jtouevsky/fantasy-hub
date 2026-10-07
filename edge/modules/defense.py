@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from edge.modules.base import Module, empty_pred, ols_through_origin
-from edge.modules.cascade import DEFAULT_P_ABSENT, estimate_p_absent
+from edge.modules.cascade import DEFAULT_P_ABSENT, estimate_p_absent, p_for, practice_code
 
 DB_POS = {"CB", "S", "FS", "SS", "DB"}
 RUSH_POS = {"DE", "DT", "DL", "NT"}
@@ -55,21 +55,22 @@ def features_for(h, team: str, opp: str, tw: int, p_abs: dict, statuses_opp=None
     statuses_*: optional {gsis: (pos, status)} overrides (live use); default = nflverse injury report rows."""
     prep = _prep(h)
     st_opp = defense_starters(prep, opp, tw)
-    rows_opp = statuses_opp if statuses_opp is not None else {r.gsis: (r.pos, r.report_status) for r in prep["inj"].get((opp, tw), pd.DataFrame(columns=["gsis", "pos", "report_status"])).itertuples()}
-    rows_own = statuses_own if statuses_own is not None else {r.gsis: (r.pos, r.report_status) for r in prep["inj"].get((team, tw), pd.DataFrame(columns=["gsis", "pos", "report_status"])).itertuples()}
+    empty = pd.DataFrame(columns=["gsis", "pos", "report_status", "practice_status"])
+    rows_opp = statuses_opp if statuses_opp is not None else {r.gsis: (r.pos, r.report_status, practice_code(r.practice_status)) for r in prep["inj"].get((opp, tw), empty).itertuples()}
+    rows_own = statuses_own if statuses_own is not None else {r.gsis: (r.pos, r.report_status, practice_code(r.practice_status)) for r in prep["inj"].get((team, tw), empty).itertuples()}
     n_db = n_rush = 0.0
     names_db, names_rush = [], []
-    for gsis, (pos, status) in rows_opp.items():
+    for gsis, (pos, status, pr) in rows_opp.items():
         if gsis in st_opp:
             nm, spos, pct = st_opp[gsis]
-            p = p_abs.get(status, 0.0)
+            p = p_for(p_abs, status, pr)
             if spos in DB_POS and pct >= 0.6:
                 n_db += p
                 names_db.append(f"{nm} ({status})")
             elif spos in RUSH_POS and pct >= 0.5:
                 n_rush += p
                 names_rush.append(f"{nm} ({status})")
-    n_ol = sum(p_abs.get(status, 0.0) for _, (pos, status) in rows_own.items() if pos in OL_POS)
+    n_ol = sum(p_for(p_abs, status, pr) for _, (pos, status, pr) in rows_own.items() if pos in OL_POS)
     press = 0.0
     pb = prep["pbp"]
     if pb is not None:

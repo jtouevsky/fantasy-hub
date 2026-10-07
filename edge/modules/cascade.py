@@ -32,6 +32,20 @@ MIN_X_SHARE = 0.08   # only cascade for absent players who actually had a role
 SHARE_POS = ["RB", "WR", "TE"]
 OUT_STATUS = {"Out", "Doubtful"}
 DEFAULT_P_ABSENT = {"Out": 0.97, "Doubtful": 0.9, "Questionable": 0.3}
+PRACTICE_KEY = {"Did Not Participate In Practice": "dnp", "Limited Participation in Practice": "limited", "Full Participation in Practice": "full"}
+
+
+def practice_code(raw) -> str:
+    return PRACTICE_KEY.get(raw, "") if isinstance(raw, str) else ""
+
+
+def p_for(p_abs: dict, status: str, practice: str = "") -> float:
+    """Probability a player with this report status (and, for Questionable, practice trend) does not play."""
+    if status == "Questionable" and practice:
+        v = p_abs.get(f"Questionable|{practice}")
+        if v is not None:
+            return v
+    return p_abs.get(status, 0.0)
 
 
 @dataclass
@@ -61,7 +75,7 @@ def prep_for(h: Hist) -> Prep:
     inj_by_game: dict = {}
     absent = set()
     for r in inj.itertuples():
-        inj_by_game.setdefault((r.team, r.t), []).append((r.gsis, r.report_status))
+        inj_by_game.setdefault((r.team, r.t), []).append((r.gsis, r.report_status, practice_code(r.practice_status)))
         if r.report_status in OUT_STATUS and (r.gsis, r.t) not in played:
             absent.add((r.gsis, r.t))
     prep = Prep(W, {tm: g for tm, g in W.groupby("team")}, played, absent, vol.set_index(["team", "t"]),
@@ -227,16 +241,22 @@ def estimate_flows(h: Hist, seasons: list[int]) -> dict:
 
 
 def estimate_p_absent(h: Hist, seasons: list[int]) -> dict:
-    """How often does each injury-report status actually mean 'did not play'? (skill positions with a real role)"""
+    """How often does each injury-report status actually mean 'did not play'? Questionable is split by practice trend
+    (did not practice / limited / full). Skill positions only; a bucket needs >= 20 cases."""
     prep = prep_for(h)
     n, k = {}, {}
     for r in h.inj[h.inj.season.isin(seasons)].itertuples():
         if prep.pos_of.get(r.gsis) not in SHARE_POS or r.report_status not in ("Out", "Doubtful", "Questionable"):
             continue
-        n[r.report_status] = n.get(r.report_status, 0) + 1
-        if (r.gsis, r.t) not in prep.played:
-            k[r.report_status] = k.get(r.report_status, 0) + 1
-    return {s: round(k.get(s, 0) / n[s], 3) for s in n if n[s] >= 20} or dict(DEFAULT_P_ABSENT)
+        keys = [r.report_status]
+        pc = practice_code(r.practice_status)
+        if r.report_status == "Questionable" and pc:
+            keys.append(f"Questionable|{pc}")
+        for key in keys:
+            n[key] = n.get(key, 0) + 1
+            if (r.gsis, r.t) not in prep.played:
+                k[key] = k.get(key, 0) + 1
+    return {key: round(k.get(key, 0) / n[key], 3) for key in n if n[key] >= 20} or dict(DEFAULT_P_ABSENT)
 
 
 class Cascade(Module):
@@ -263,9 +283,9 @@ class Cascade(Module):
         prep = prep_for(h)
         flows, p_abs = self.coefs.get("flows", {}), self.coefs.get("p_absent", DEFAULT_P_ABSENT)
         for (team, t), idx in rows.groupby(["team", "t"]).groups.items():
-            absent = {gsis: p_abs.get(st, 0.0) for gsis, st in prep.inj_by_game.get((team, t), [])}
+            absent = {gsis: p_for(p_abs, st, pr) for gsis, st, pr in prep.inj_by_game.get((team, t), [])}
             res = compute_team(prep, flows, team, t, absent)
-            status = {gsis: ("OUT" if st in OUT_STATUS else "QUESTIONABLE") for gsis, st in prep.inj_by_game.get((team, t), [])}
+            status = {gsis: ("OUT" if st in OUT_STATUS else "QUESTIONABLE") for gsis, st, pr in prep.inj_by_game.get((team, t), [])}
             for i in idx:
                 info = res.get(rows.at[i, "gsis"])
                 if info is None:

@@ -1,6 +1,6 @@
 # Edge engine backtest
 
-_Generated 2026-10-07 00:54 by `python -m edge.backtest` in 479s._
+_Generated 2026-10-07 01:03 by `python -m edge.backtest` in 136s._
 
 ## Method
 
@@ -17,24 +17,24 @@ _Generated 2026-10-07 00:54 by `python -m edge.backtest` in 479s._
 |---|---|---|---|---|---|---|
 | Game environment (Vegas) | **ON** | 0.25 | 779 of 3690 | 6.36 → 6.33 | +0.025 (+0.008 to +0.043) | +0.0057 (+0.0017 to +0.0094) |
 | Weather | **ON** | 1 | 288 of 3690 | 5.74 → 5.45 | +0.292 (+0.036 to +0.590) | +0.0223 (-0.0009 to +0.0449) |
-| Injury cascade (vacated opportunity) | **SHRUNK** | 0.375 | 967 of 3690 | 5.81 → 5.76 | +0.046 (-0.007 to +0.102) | +0.0125 (-0.0019 to +0.0262) |
-| Opposing defense injuries & pass rush | **ON** | 1 | 1972 of 3690 | 5.87 → 5.70 | +0.170 (+0.118 to +0.224) | +0.0939 (+0.0672 to +0.1227) |
+| Injury cascade (vacated opportunity) | **ON** | 0.5 | 972 of 3690 | 5.80 → 5.76 | +0.044 (+0.002 to +0.084) | +0.0118 (+0.0012 to +0.0218) |
+| Opposing defense injuries & pass rush | **ON** | 1 | 1955 of 3690 | 5.90 → 5.73 | +0.169 (+0.114 to +0.220) | +0.0931 (+0.0665 to +0.1220) |
 | Opportunity vs. production + role trend | **ON** | 1 | 3064 of 3690 | 5.79 → 5.57 | +0.220 (+0.162 to +0.282) | +0.1826 (+0.1323 to +0.2309) |
 
 ### Notes per module
 
 * **Game environment (Vegas)** - 2025 hold-out improvement is statistically clear (CI excludes 0). 2024 (in-sample) gain on moved rows: +0.017 over 698 rows.
 * **Weather** - 2025 hold-out improvement is statistically clear (CI excludes 0). 2024 (in-sample) gain on moved rows: +0.762 over 206 rows.
-* **Injury cascade (vacated opportunity)** - 2025 improvement is positive but not statistically clear; strength halved. 2024 (in-sample) gain on moved rows: +0.055 over 1067 rows.
-* **Opposing defense injuries & pass rush** - 2025 hold-out improvement is statistically clear (CI excludes 0). 2024 (in-sample) gain on moved rows: +0.163 over 2017 rows.
+* **Injury cascade (vacated opportunity)** - 2025 hold-out improvement is statistically clear (CI excludes 0). 2024 (in-sample) gain on moved rows: +0.043 over 1069 rows.
+* **Opposing defense injuries & pass rush** - 2025 hold-out improvement is statistically clear (CI excludes 0). 2024 (in-sample) gain on moved rows: +0.162 over 2029 rows.
 * **Opportunity vs. production + role trend** - 2025 hold-out improvement is statistically clear (CI excludes 0). 2024 (in-sample) gain on moved rows: +0.225 over 3081 rows.
 
 ### Big movers (|adjustment| >= 2 pts), 2025
 
 * **Game environment (Vegas)**: only 0 rows that large - not enough to evaluate
 * **Weather**: 141 rows; gain +0.37 pts MAE (95% CI -0.14 to +0.89)
-* **Injury cascade (vacated opportunity)**: 51 rows; gain +0.41 pts MAE (95% CI -0.24 to +1.05)
-* **Opposing defense injuries & pass rush**: 166 rows; gain +0.43 pts MAE (95% CI +0.02 to +0.91)
+* **Injury cascade (vacated opportunity)**: 20 rows; gain +0.50 pts MAE (95% CI -0.51 to +1.37)
+* **Opposing defense injuries & pass rush**: 166 rows; gain +0.41 pts MAE (95% CI -0.01 to +0.86)
 * **Opportunity vs. production + role trend**: 798 rows; gain +0.60 pts MAE (95% CI +0.40 to +0.78)
 
 ## Where each module's gain comes from (feature ablation, fit on 2024, 2025 hold-out, full strength)
@@ -43,9 +43,9 @@ _Generated 2026-10-07 00:54 by `python -m edge.backtest` in 479s._
 
 | Signal alone | MAE | Gain vs baseline (95% CI) |
 |---|---|---|
-| Own OL injuries | 5.536 | +0.0944 (+0.0685 to +0.1222) |
-| Opposing DB (CB/S) injuries | 5.611 | +0.0194 (+0.0072 to +0.0304) |
-| Opposing pass-rusher injuries | 5.617 | +0.0132 (+0.0075 to +0.0190) |
+| Own OL injuries | 5.536 | +0.0940 (+0.0690 to +0.1213) |
+| Opposing DB (CB/S) injuries | 5.611 | +0.0192 (+0.0070 to +0.0306) |
+| Opposing pass-rusher injuries | 5.618 | +0.0129 (+0.0070 to +0.0189) |
 | Pass rush vs. protection (play-by-play pressure) | 5.630 | +0.0001 (-0.0064 to +0.0062) |
 
 **Regression**
@@ -74,20 +74,20 @@ ESPN projections already absorb part of each signal and are far better than the 
 |---|---|---|---|
 | Game environment (Vegas) | 0.25 | x0.5 | ESPN projections already reflect game environment |
 | Weather | 1 | x1 | ESPN rarely adjusts for wind/cold |
-| Injury cascade (vacated opportunity) | 0.375 | x0.5 | ESPN adjusts for confirmed injuries but lags on depth shifts |
+| Injury cascade (vacated opportunity) | 0.5 | x0.5 | ESPN adjusts for confirmed injuries but lags on depth shifts |
 | Opposing defense injuries & pass rush | 1 | x0.75 | mostly OL injuries, which ESPN does not model |
 | Opportunity vs. production + role trend | 1 | x0.5 | ESPN's projections already use opportunity (a trailing average does not) |
 
 ## All shipped modules together (2025 hold-out)
 
-* 3,690 player-games. MAE **5.630 → 5.363** (gain +0.2673, 95% CI +0.2041 to +0.3319).
+* 3,690 player-games. MAE **5.630 → 5.362** (gain +0.2686, 95% CI +0.2048 to +0.3324).
 
 | Position | Baseline MAE | With edges |
 |---|---|---|
-| QB | 7.092 | 6.775 |
-| RB | 5.819 | 5.439 |
+| QB | 7.092 | 6.776 |
+| RB | 5.819 | 5.436 |
 | WR | 5.339 | 5.164 |
-| TE | 4.903 | 4.627 |
+| TE | 4.903 | 4.624 |
 
 ## Cap sensitivity (all shipped modules, 2025 hold-out)
 
@@ -95,12 +95,12 @@ The per-player cap bounds how far edges can move a projection. Smaller = safer, 
 
 | Cap (of max(baseline, floor)) | Floor | MAE with edges | Gain vs baseline |
 |---|---|---|---|
-| 20% | 6 | 5.374 | +0.2569 |
-| 35% | 0 | 5.361 | +0.2699 |
-| 35% | 6 | 5.363 | +0.2673 |
-| 50% | 6 | 5.371 | +0.2598 |
-| 75% | 6 | 5.373 | +0.2574 |
-| 1000% | 6 | 5.375 | +0.2554 |
+| 20% | 6 | 5.373 | +0.2575 |
+| 35% | 0 | 5.359 | +0.2714 |
+| 35% | 6 | 5.362 | +0.2686 |
+| 50% | 6 | 5.369 | +0.2611 |
+| 75% | 6 | 5.372 | +0.2583 |
+| 1000% | 6 | 5.374 | +0.2563 |
 
 ## Caveats
 
