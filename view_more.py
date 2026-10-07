@@ -129,7 +129,7 @@ def _edge_engine(ctx: Ctx) -> None:
 
 def _strategy(ctx: Ctx) -> None:
     cur = ctx.hub.strategy
-    html(ui.notice("These rules apply to <b>every</b> recommendation: the Waivers page, Overview cards, the lineup optimizer and the AI assistant all use them. "
+    html(ui.notice("These rules apply to <b>every</b> recommendation: the Players page, Overview cards, the player sheet and the AI assistant all use them. "
                    "Nothing here changes anything on ESPN.", "", "tune"))
     slots = ctx.snap.starter_slots
     with st.form("strategy_form"):
