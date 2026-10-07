@@ -51,3 +51,22 @@ All four symptoms come from the move logic in `waivers.py` plus how the agent us
 | Average ppg, no schedule | Week-by-week optimal lineups for both teams (byes, return weeks, playoff weighting) |
 | No roster rules / strategy | `strategy.py` settings: streaming, caps, drop logic, recently-added protection |
 | Agent invents moves | One `find_moves()` / `evaluate_move()` used by every surface; validation layer; sanity checks; "no move" is valid |
+
+## 4. Validation: does the model-vs-market gap carry signal?
+
+`python -m tools.trade_backtest` (offline; reproducible). Market proxy = FantasyPros expert-consensus positional ranks from nflverse's
+`load_ff_rankings` (the snapshot nearest each season start; later snapshots are end-of-season, so this is a deliberately *stale* proxy for
+how managers anchor on preseason reputation). Model = games-played blend (K=4) of actual ppg through week 4 with a prior from last season's
+ppg, with **no ECR inside it**, so the two are independent. Decision week 5; outcome = actual points weeks 5-17. The market's expectation is
+a per-position quadratic of ROS points on ECR rank, fit on 2024 only and applied unchanged to 2025.
+
+| Season | n | corr(gap, ROS surprise) | Model-likes-more quintile vs market expectation | Model-likes-less quintile |
+|---|---|---|---|---|
+| 2024 (tune) | 124 | +0.12 | -5.7 pts (54% beat market) | -8.8 pts (60% underperformed) |
+| 2025 (validate) | 125 | +0.30 | +24.5 pts (80% beat market) | -28.4 pts (72% underperformed) |
+
+Reading: the gap points the right way in both years, but 2024 is within noise. So a model-vs-market gap is **a hint, not proof**: the engine
+therefore (a) shows edge as a separate number from the market value, (b) flags very large gaps as *speculative*, and (c) never lets the gap
+alone make a trade "likely". Terms of use: only nflverse's published data is used (offline, for this backtest); no KeepTradeCut/FantasyCalc or
+other forbidden sources are scraped. Live market value uses ESPN's own fields from the user's league.
+Limitations: ECR is preseason-only here, ~125 players per season, one decision week.
