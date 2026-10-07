@@ -1,7 +1,6 @@
 # Trade engine v2 and recommendation quality
 
-Status: design + diagnosis (this section was written first, from live-league evidence, before any fixes).
-Sections "Design", "Validation" and "Known limits" are filled in below as each piece lands.
+Status: implemented. Section 1 (diagnosis) was written first, from live-league evidence, before any fixes; the rest describes what shipped.
 
 ## 1. Diagnosis
 
@@ -52,6 +51,55 @@ All four symptoms come from the move logic in `waivers.py` plus how the agent us
 | No roster rules / strategy | `strategy.py` settings: streaming, caps, drop logic, recently-added protection |
 | Agent invents moves | One `find_moves()` / `evaluate_move()` used by every surface; validation layer; sanity checks; "no move" is valid |
 
+## 2. Design
+
+### 2a. Two questions, never blended
+
+| Question | Driven by | Where |
+|---|---|---|
+| **Should I offer it?** | **My value**: change in my optimal starting lineup, week by week, rest of season (byes, return weeks, playoff weeks x1.5, adjusted projections, roster-spot cost, best actual free agent fills any hole) | `season.py`, `trading.evaluate` |
+| **Would they accept it?** | **Their perception**: market value fairness (biggest signal), need fit, situation, name value, manager history | `market.py`, `acceptance.py` |
+
+Both values are on the same "points above replacement" scale so the *gap* (my value minus market value) is the edge, and a 60/40 split means 60/40 in **my** value while market value is near even. Nothing is clipped to zero; a below-replacement player is negative, and bench ordering uses raw points plus upside.
+
+### 2b. Injuries and IR
+
+Availability by week is a normal-CDF return curve: news-derived games missed when known (tight spread), otherwise a status default (IR 6 games, Out 1.5, Suspended 3) with a wide spread, times a 0.92 re-injury discount and a rust factor (0.88 / 0.95 in the first two weeks back). Questionable counts for this week only (41% sit rate from nflverse history). A star on IR therefore keeps most of his market value but is valued by *when* he comes back, which matters most if it is in time for the playoffs. A player in an IR slot costs no bench spot.
+
+### 2c. Market value
+
+From ESPN's own fields for the user's league: average draft position, average auction value, PPR draft rank, expert consensus rest-of-season positional rank, % rostered and % started. Each is matched by rank/quantile onto the league's healthy points-above-replacement distribution (weights in `market.py`), then a consolidation premium (`CONSOLIDATION = 0.35`) makes one star worth more than two lesser players with the same points (scarcity curve). When ESPN has no market data for a player (rare), the model's healthy value is used and the row is marked as having no market.
+
+### 2d. Acceptance
+
+A logit of named signals: market fairness (scale 14), need fit (+-0.7 at 0.12 per point), situation, name/brand (+-0.6), manager history from the ESPN activity feed. Labels: *likely*, *coin flip*, *unlikely*. The signals and reasons are always shown; no percentage is displayed because none is calibrated. Logged negotiations override (`confirmed by manager`) only for the same ask or a strictly better/worse version of it, and also move a per-manager tendency (one Newton step of Bayesian logistic regression, prior variance 1, clipped at +-1.5) so a manager who keeps saying no or yes shifts later estimates. The override only touches *would they accept*; it never changes *should I offer it*.
+
+### 2e. Search
+
+For every other team (or one partner), every player I would want if he came free (adds >= 6 weighted points to my lineup) becomes a target, alone or in pairs. For each target I try give-sets smallest first: the core I named, then core + 1, then core + 2. As soon as a smaller offer clears acceptance, bigger ones are not tried, so a clearing 1-for-1 always beats a clearing 2-for-1. Trades that hurt my lineup are dropped unless I flagged sell/rebuild. Gains that rest on my model being far more bullish than the consensus are flagged *speculative* and count half in the ranking. Each result carries an offer ladder: **Open** (cheapest plausible), **Fair** (market-even for him), **Walk away** (the most I would give while still gaining >= 2).
+
+### 2f. Moves, streaming and rules (`moves.py`, `strategy.py`)
+
+`evaluate_move(add, drop)` re-solves my lineup with and without the move and then runs a deterministic validation layer; `find_moves()` is the only producer of recommendations (Players page, Overview, player sheet and the assistant call the same function):
+
+* **Streaming** (D/ST on by default, K optional): ranked on *this week's* adjusted projection (for D/ST, ESPN's number blended 50/50 with the matchup model in `edge/dst.py`); swap only if the best option beats my current one by at least +2.0 (a bye or injury forces a swap), otherwise the answer is "keep your current D/ST". A short plan-ahead line shows next week's best matchup. No ping-pong: nobody I dropped in the last 7 days is re-added.
+* **Caps**: at most 2 QBs (and no more than starters + 1), 1 D/ST, 1 K (0 if the league has no K slot), starters + 1 TE. Adding a player at a capped position requires dropping one at that position.
+* **Drop logic**: redundancy first (the 3rd QB, the extra D/ST), then the least useful non-IR bench player by raw + upside. Never a starter-caliber player (starts >= 40% of remaining weeks) for a backup.
+* **Recently added**: players added in the last 7 days (ESPN activity feed) are protected unless the gain is >= 5 pts and there is new injury news.
+* **Projection sanity**: a one-week projection far above a player's own level, with no sourced reason (edge adjustments that explain >= 60% of the jump count as a reason), is *speculative*: the jump is cut to a third for the gain, the bar is +3 higher, confidence is capped at low.
+* **Output**: at most 3 ranked moves with this-week gain, rest-of-season gain, a 1-2 line reason (Beginner mode adds one definition line), confidence, and "no move needed" when nothing clears the bar.
+
+### 2g. Agent contract
+
+The assistant has no valuation tools of its own. `find_moves`/`evaluate_move`/`find_trades`/`evaluate_trade` return the engine's result; the system prompt (with the strategy block, slots, caps, week) requires it to recommend only what they return, answer the two trade questions separately, quote labels instead of invented percentages, show the parsed constraints, and call `log_negotiation` when the user reports an answer. Player rows no longer contain placeholder values ("0.0 rest-of-season value") or irrelevant bye info.
+
+## 3. How the original examples behave now
+
+* **A.J. Brown (IR) for Garrett Wilson**: market value Brown 67.9 vs Wilson 59.2 (consensus ROS rank WR10 vs WR18), so he *receives* more by market; the label is "coin flip" with no sweetener. By my value it is still good for me (regression test `test_brown_for_wilson_regression_is_plausible_without_a_sweetener`). Note: the user does not want to make this trade; it is a calibration case only.
+* **Just-added D/ST**: kept unless an alternative beats it by +2.0 this week (scenario `dst_just_added`); the held D/ST can never be re-proposed.
+* **A third QB on one outlier projection**: blocked by the cap, never at the cost of an RB (scenario `two_qbs`).
+* **"0.0 rest-of-season value"**: removed from tool output and from the UI; raw expected points are shown instead.
+
 ## 4. Validation: does the model-vs-market gap carry signal?
 
 `python -m tools.trade_backtest` (offline; reproducible). Market proxy = FantasyPros expert-consensus positional ranks from nflverse's
@@ -70,3 +118,28 @@ therefore (a) shows edge as a separate number from the market value, (b) flags v
 alone make a trade "likely". Terms of use: only nflverse's published data is used (offline, for this backtest); no KeepTradeCut/FantasyCalc or
 other forbidden sources are scraped. Live market value uses ESPN's own fields from the user's league.
 Limitations: ECR is preseason-only here, ~125 players per season, one decision week.
+
+### 4b. D/ST matchup model (`python -m edge.dst`)
+
+D/ST points under ESPN's default D/ST scoring (an assumption: the league's D/ST scoring items are not stored; sack 1, INT 2, fumble recovery 2, TD 6, safety 2, blocked kick 2, points-allowed bands) regressed (ridge) on the opponent's Vegas implied total, its trailing-4-game turnovers and sacks allowed, and wind. Trained on 2023-24 team-games, tested on 2025 (n = 544): MAE 3.83 vs 4.17 for "the defense's own trailing mean"; correlation with actual points 0.29 vs 0.08. Implied total has the largest effect (-0.41 pts per implied point). It is a matchup *estimate*, labelled as such, and blended 50/50 with ESPN's number.
+
+### 4c. Blend constant
+
+The games-played blend K = 4 (actual ppg vs projection) was re-checked in the v2 work and left unchanged; the market-gap backtest above uses the same K.
+
+## 5. Verification
+
+* `python -m pytest -q`: unit tests for IR valuation and slots, roster-spot cost, consolidation, cheapest-offer ordering (a clearing 1-for-1 beats a clearing 2-for-1), no sweeteners, position caps, streaming threshold, recently-added protection, no-zero-clipping ranking, the Brown-for-Wilson regression, the parser, the pitch helper, every page rendering in demo mode (AppTest), and the deterministic agent scenarios (`tests/agent_scenarios/`).
+* Manual live-assistant suite (`RUN_AGENT_SCENARIOS=1 python -m tests.agent_scenarios.run_live`): the real assistant keeps the D/ST, declines a 3rd QB with the cap as the reason, labels a one-week spike speculative, and answers "no move needed". The first runs surfaced two real bugs, both fixed: the answer text could be lost when the model ended with only "I logged it", and a one-week spike was ranked #2 on face value.
+* Live league (Week 5, 2026), headless and in the browser: all pages render; Trades finds whole-league options with both verdicts, week-by-week row, ladder; the chat input is dark in dark mode with the full placeholder visible.
+
+## 6. Known limits
+
+* **Market value is a proxy.** It comes from ESPN's own consensus fields. It does not see private league chatter, other managers' needs beyond roster composition, or recent trades unless they show up in the activity feed. The historical test of the model-vs-market gap is weak in 2024 and strong in 2025 (n ~ 125 each), so treat edge as a hint.
+* **Large "+170" style gains** come from players my blended ppg rates far above the consensus (e.g. a hot start). They are flagged speculative and discounted in ranking but still shown; verify before proposing.
+* **D/ST scoring** is assumed to be ESPN's default; if your league differs the matchup estimate shifts a little (ranking is mostly unaffected).
+* **IR timelines** use news-derived games missed when the AI news scan has them, otherwise defaults (IR = 6 games); a wrong default moves a returning player's value.
+* **Acceptance has no calibration data** until you log negotiations; it shows reasons and labels only. With a handful of logged answers the per-manager tendency is intentionally small.
+* **No data for in-season weekly ECR history** exists in nflverse (only a preseason and end-of-season snapshot per year), so the backtest compares the model at week 5 with the preseason consensus; it measures the *direction* of the gap, not an exact tradable price.
+* The manual agent suite depends on the model's wording and a logged-in Claude; it can flake and is intentionally not part of the normal test run.
+* Nothing here sends anything: trades, claims and messages are drafted for the user to do in ESPN.

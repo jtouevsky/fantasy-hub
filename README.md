@@ -123,56 +123,23 @@ Live strengths are the backtest strengths times a documented haircut (`LIVE_SCAL
 ### Agent tools
 `get_edges(player or team, week)`, `get_injury_cascade(team)`, `get_buy_low_sell_high()`, `get_game_environment(game)`. The assistant must cite which adjustments drove its advice (type, size, source, confidence) and say when none applied; it presents cascades as context, not as projection changes.
 
-## How the player value model works (`valuation.py`)
+## Recommendations v2: moves and trades (one engine for every screen)
+
+Full design, diagnosis, backtests and limits: [docs/trade-engine-v2.md](docs/trade-engine-v2.md).
+
+* **`season.py`** values everyone week by week: injury **return timelines** (news-derived games missed, else a status default, with uncertainty, a re-injury discount and a rust factor), byes, playoff weeks at 1.5x, edge-engine adjusted projections. Value is **signed points above replacement** plus **raw** rest-of-season points; nothing is clipped to 0, and bench players are ranked by raw + upside. A player in an IR slot costs no bench spot.
+* **`market.py`** is *market value*: what other managers see (ESPN ADP, auction value, PPR draft rank, expert rest-of-season rank, % rostered/started), mapped onto the same scale as my value. **`acceptance.py`** answers "would he accept" from market fairness, need, situation, name value and that manager's history, as a label (likely / coin flip / unlikely) with the signals shown, never a made-up percentage. Logged negotiations ("confirmed by manager") override the estimate and update a per-manager tendency (Bayesian).
+* **`trading.py`**: two separate answers per trade (should I offer it = my value; would they accept = market value + need + situation + history). The search scans the **whole league**, finds the **cheapest winning offer first** (1-for-1 before 2-for-1, no unneeded sweeteners), recomputes both lineups week by week including roster-spot costs and best actual free-agent fill-ins, and gives an **offer ladder** (Open / Fair / Walk away). Plain-English requests are parsed into explicit constraints you can correct. Large gaps between my model and the consensus are flagged *speculative*.
+* **`moves.py`**: `evaluate_move()` / `find_moves()` used by the Players page, Overview, player sheet and the AI. A deterministic validation layer enforces **My strategy** (More > My strategy): streaming D/ST (and optionally K) ranked on this week's matchup with a minimum swap gain, position caps, never cutting a starter for a backup, recently-added protection, and a projection sanity check for one-week outliers. "No move needed" is a normal answer. `edge/dst.py` is the D/ST matchup model (validated out of sample).
+* **`hub.py`** builds all of the above once per data refresh; `agent.py` only calls it (the assistant does no valuation of its own).
+
+## Value model basics (`valuation.py`)
 
 ```
-ppg          = (games_played x actual_ppg + 4 x projected_ppg) / (games_played + 4)
-games_left   = weeks from now to the end of the fantasy season, minus the NFL bye if it is still ahead
-availability = ACTIVE 1.0 | QUESTIONABLE 0.97 | DOUBTFUL 0.85 | OUT 0.75 | INJURY_RESERVE 0.5
-ros_points   = ppg x games_left x availability
-value        = max(0, ppg - replacement_ppg[position]) x games_left x availability
+ppg = (games_played x actual_ppg + 4 x projected_ppg) / (games_played + 4)
 ```
 
-* **ppg** blends what the player has actually done with ESPN's projection (the projection counts as 4 games of evidence), so
-  one hot or cold week does not swing the number.
-* **replacement_ppg[position]** is the points-per-game of the first player *not* starting league-wide at that position, from
-  all rostered players plus the top free agents. "How many start" is **measured**, not assumed: every team's best lineup is
-  solved using your league's real slot settings, so FLEX slots are split between RB/WR/TE by who actually fills them.
-  This is what builds in **positional scarcity**: a position where starters are far better than the free-agent pool
-  (and few are available) produces a high `value` for its stars.
-* **value** is "rest-of-season points above a free pickup". Players at or below replacement are worth 0.
-
-### Trade fairness
-
-```
-package_value = best player's value + 0.6 x (each additional player's value)     # 2-for-1s aren't a simple sum
-split         = my_get_value / (my_get_value + my_give_value)                    # 60 means I receive 60% of the value
-```
-
-`evaluate_trade` also re-solves **both** teams' best lineups before and after the trade (holes are filled by a free
-replacement-level pickup, since you could grab one on waivers), and reports who starts/sits and the weekly points change.
-
-### Trade finder (`trades.py`)
-
-Given a target team, the player you're offering, and a target split, it searches 1-for-1, 2-for-1 (you add a sweetener) and
-1-for-2 packages, and ranks them with:
-
-```
-score = 100 - 3 x |my_split - target|
-        + 4 x (their lineup improvement, up to 4 pts/wk)      or  - 10 x (their lineup loss)
-        + 4 x (my lineup change, capped at +/-4 pts/wk)
-        - 6 x (my_split - 65)  if my_split > 65                 # so lopsided the other manager would obviously refuse
-        - 20                    if the other manager's acceptance is "Unlikely"
-```
-
-So deals that fill a need on **their** roster outrank deals that only look good on paper. All knobs are constants at the
-top of `trades.py`.
-
-### Waivers (`waivers.py`)
-
-Each (add, drop) pair is scored by re-solving **your** lineup with and without the move (this week and rest of season), so
-positional need, bye/injury coverage and bench depth are captured automatically. The drop is always one of your weakest
-non-starters.
+`valuation.ValueModel` supplies the blended points per game and the league-measured replacement level per position (the first player *not* starting league-wide, from every team's solved best lineup under your real slot settings, so FLEX is split by who actually fills it). `season.py` builds everything else on top of it.
 
 ## The AI agent (`agent.py`)
 
@@ -182,8 +149,8 @@ own file/shell tools are switched off so it can only call the league tools below
 Anthropic API with a key.)
 
 Claude (`ANTHROPIC_MODEL`, default `claude-sonnet-5-5`) is given these tools: `get_league_overview`, `get_my_roster`,
-`get_team_roster`, `get_free_agents`, `evaluate_trade`, `find_trades`, `optimize_lineup`, `suggest_waiver_moves`,
-`get_player_news`, `log_recommendation`. The system prompt forbids stating any number that didn't come from a tool, asks for
+`get_team_roster`, `get_free_agents` (raw facts only), `find_moves`, `evaluate_move`, `evaluate_trade`, `find_trades`, `draft_trade_pitch`,
+`log_negotiation`, `get_manager_profile`, `get_strategy`, `optimize_lineup`, `get_player_news`, `log_recommendation`. The system prompt forbids stating any number that didn't come from a tool, asks for
 plain-English explanations, and requires every recommendation to end with "Do this in the ESPN app: ...". Teams can be
 referenced by owner first name ("Kaden"). Recommendations are written to the `recommendations` table in
 `data/fantasy_hub.db` (also viewable in the **Log** tab).
@@ -201,8 +168,7 @@ referenced by owner first name ("Kaden"). Recommendations are written to the `re
 python -m pytest -q
 ```
 
-Covers the value model and fairness math, the lineup optimizer (including a brute-force optimality check), waiver and trade
-ranking, news alert logic, and the agent loop (with a scripted fake Claude, so no API key is needed).
+Covers the season/market/acceptance models, trade search and moves rules, the lineup optimizer (including a brute-force optimality check), news alert logic, every page rendering (Streamlit AppTest) and the agent loop (with a scripted fake Claude, so no API key is needed). The assistant's wording on tricky scenarios is a separate manual suite: `RUN_AGENT_SCENARIOS=1 python -m tests.agent_scenarios.run_live`. Backtests: `python -m tools.trade_backtest`, `python -m edge.dst`.
 
 ## Layout
 
@@ -212,8 +178,9 @@ ctx.py            per-session data + cross-page actions      dialogs.py    playe
 ui.py             HTML components (rows, scoreboard, chart)  assets.py     team brand + verified images
 theme.py / static/theme.css  design tokens + styles          ai_runner.py  runs the AI (subscription or API)
 league_client.py  the only espn-api importer                 valuation.py  value model + fairness
-models.py         dataclasses used everywhere                trades.py     evaluator + finder
-config.py / db.py env config, SQLite cache, log, settings    waivers.py    add/drop suggestions
+models.py         dataclasses used everywhere                trading.py    trade search + evaluator
+config.py / db.py env config, SQLite cache, log, settings    moves.py      add/drop + streaming engine
+season.py / market.py / acceptance.py / strategy.py / hub.py   v2 valuation, market value, acceptance, My strategy, shared bundle
 sleeper.py        injuries + trending                        news.py       news feed + alerts
 edge/             edge engine: history, modules, engine, backtest, news_ai, odds, forecast, timing
 agent.py          Claude tool-use agent                      demo_data.py  fake league for tests/demo
