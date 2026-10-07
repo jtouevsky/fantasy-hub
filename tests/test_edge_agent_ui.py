@@ -2,7 +2,6 @@ import json
 
 import agent
 import demo_data
-import ui
 from edge.engine import EngineResult, GameEnv
 from models import PlayerInfo
 from valuation import ValueModel
@@ -70,26 +69,27 @@ def test_system_prompt_requires_citing_adjustments():
     assert "CITE it" in p and "never claim an edge a tool did not return" in p and "AI-extracted" in p
 
 
-def test_edge_ui_components_show_espn_to_adjusted_and_a_why():
+def test_edge_rows_show_espn_to_adjusted_and_a_why():
+    from server import serialize as S
+    import fmt
     p = PlayerInfo(1, "Backup RB", "RB", "KC", "ACTIVE", "BE", ["RB"], week_proj=14.9, espn_week_proj=12.4)
     p.edge = [{"type": "cascade", "delta": 2.5, "raw": 3.4, "reason": "RB1 out -> +4 carries", "source": "nflverse", "confidence": "med", "at": 1.0}]
-    assert p.has_edge and ui.edge_label(p) == "ESPN 12.4 → Adjusted 14.9"
-    why = ui.edge_why(p)
-    assert "<details" in why and "RB1 out" in why and "Source: nflverse" in why and "med confidence" in why and "capped from +3.4" in why
-    row = ui.Brand(None).player_row(p, slot="BN")
-    assert "ESPN 12.4" in row and "14.9" in row and "Edge +2.5" in row and "<details" in row
+    assert p.has_edge and fmt.edge_label(p) == "ESPN 12.4 → Adjusted 14.9"
+    rows = S.edge_rows(p)
+    assert rows[0]["reason"] == "RB1 out -> +4 carries" and rows[0]["source"] == "nflverse" and rows[0]["confidence"] == "med" and rows[0]["raw"] == 3.4 and rows[0]["delta"] == 2.5
     plain = PlayerInfo(2, "No Edge", "RB", "KC", "ACTIVE", "BE", ["RB"], week_proj=8.0)
-    assert ui.edge_why(plain) == "" and "ESPN" not in ui.Brand(None).player_row(plain)
-    assert ui.edge_label(plain) == "ESPN 8.0"
+    assert S.edge_rows(plain) == [] and fmt.edge_label(plain) == "ESPN 8.0"
 
 
-def test_news_event_card_is_labeled_ai_extracted_and_links_the_source():
-    html = ui.news_event_html({"player": "A B", "status": "out", "event_type": "injury", "summary": "He is out.", "raw_text": "A B is out.", "source_url": "https://x/y", "published_at": "2026-10-06T09:00:00Z", "beneficiaries": ["C D"]})
-    assert "AI-extracted from ESPN news" in html and "Out" in html and 'href="https://x/y"' in html and "Original text" in html and "C D" in html
+def test_news_event_is_labeled_and_keeps_the_source_link():
+    from server import serialize as S
+    e = S.news_event({"player": "A B", "status": "out", "event_type": "injury", "summary": "He is out.", "raw_text": "A B is out.", "source_url": "https://x/y", "published_at": "2026-10-06T09:00:00Z", "beneficiaries": ["C D"]})
+    assert e["url"] == "https://x/y" and e["status"] == "out" and e["beneficiaries"] == ["C D"] and e["raw"] == "A B is out."
 
 
-def test_game_environment_html_has_forecast_stamp_and_flags_wind():
+def test_game_environment_has_forecast_stamp_and_flags():
+    from server import serialize as S
     env = GameEnv("KC", "BUF", True, 3.0, 47.0, 25.0, 22.0, "odds-api", "k", "s", "outdoor", 18.0, 22.0, 40, 1.0e9, "forecast")
-    h = ui.game_env_html(env)
-    assert "KC favored by 3.0" in h and "Wind 18 mph" in h and "forecast" in h and "Lines: odds-api" in h
-    assert "No Vegas line" in ui.game_env_html(GameEnv("KC", "BUF", True, None, None, None, None, "missing"))
+    g = S.game_env(env)
+    assert g["fav"] == "KC favored by 3.0" and g["windMph"] == 18.0 and g["forecastAt"] and g["linesSource"] == "odds-api"
+    assert S.game_env(GameEnv("KC", "BUF", True, None, None, None, None, "missing"))["total"] is None

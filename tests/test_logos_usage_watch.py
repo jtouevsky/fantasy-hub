@@ -7,7 +7,6 @@ from PIL import Image
 import assets
 import ctx as cx
 import db
-import ui
 from edge import usage
 from edge.history import Hist
 from models import TeamInfo
@@ -45,22 +44,12 @@ def test_unavailable_logo_falls_back_cleanly_and_is_not_retried(tmp_path, monkey
     p = str(tmp_path / "l.db")
     assert assets.fantasy_logo_src("https://x/y", None, p) is None and assets.fantasy_logo_src("https://x/y", None, p) is None
     assert len(calls) == 1
-    b = ui.Brand(p)
-    html = b.team_avatar(TeamInfo(3, "Caleb diggs little kids", logo="https://x/y"))
-    assert "<img" not in html and "CK" in html                                    # initials fallback
 
 
-def test_secrets_never_appear_in_markup(tmp_path, monkeypatch):
+def test_secrets_never_leave_the_server(tmp_path, monkeypatch):
     monkeypatch.setattr(assets.requests, "get", lambda *a, **k: Resp(_jpeg()))
-    b = ui.Brand(str(tmp_path / "l.db"), {"espn_s2": "SUPERSECRET", "SWID": "{ABC}"})
-    html = b.team_avatar(TeamInfo(1, "Team", logo="https://mystique.example/i"))
-    assert "SUPERSECRET" not in html and "{ABC}" not in html and "data:image/jpeg" in html
-
-
-def test_default_svg_logo_is_used_directly(tmp_path, monkeypatch):
-    monkeypatch.setattr(assets, "_exists", lambda u: True)
-    html = ui.Brand(str(tmp_path / "l.db")).team_avatar(TeamInfo(8, "Jordy", logo="https://g.espncdn.com/x/default_logos/16.svg"))
-    assert 'src="https://g.espncdn.com/x/default_logos/16.svg"' in html and 'role="img"' in html
+    src = assets.fantasy_logo_src("https://mystique.example/i", {"espn_s2": "SUPERSECRET", "SWID": "{ABC}"}, str(tmp_path / "l.db"))
+    assert src.startswith("data:image/jpeg") and "SUPERSECRET" not in src and "{ABC}" not in src
 
 
 def test_usage_summary_only_reports_what_the_data_has():

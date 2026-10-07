@@ -8,10 +8,11 @@ every recommendation ends with something for you to do by hand in the ESPN app.
 
 ## Setup
 
+You need Python 3.11+ and Node.js 20+ (for the frontend build).
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 cp .env.example .env        # then edit .env (it is git-ignored)
+make setup                  # creates .venv, installs Python and Node dependencies
 ```
 
 ### Fill in `.env`
@@ -45,10 +46,19 @@ python check_connection.py     # prints league structure, never your secrets
 ## Run
 
 ```bash
-streamlit run app.py
+make start     # builds the frontend and serves everything at http://localhost:8000
+make dev       # development: API on :8000 (auto-reload) + Vite on :5173 (hot reload); open http://localhost:5173
 ```
 
-No credentials yet? Click **Use demo data** on the first screen to explore with a fake league.
+Or double-click **Start Fantasy Hub.command** (builds the first time, then opens http://localhost:8000).
+
+No credentials yet? Click **Explore with demo data** on the first screen to explore with a fake league.
+
+### Architecture
+
+* `server/` - FastAPI backend that exposes the existing Python engines (league client, valuation, optimizer, trades, edge engine, agent) as JSON. The ESPN snapshot, edge engine, value model and move/trade engines are built **once per refresh** and cached (`ctx.py`); heavy results (trade search, moves) are memoized per refresh, so navigating never recomputes anything.
+* `web/` - React + TypeScript + Vite (TanStack Query for client caching and prefetching, TanStack Virtual for long lists). Client-side routing means switching tabs never reloads data; cached data shows instantly and refreshes in the background.
+* Performance numbers: [docs/performance.md](docs/performance.md).
 
 ## What's in the app
 
@@ -72,12 +82,11 @@ Everything is **read-only**. Each recommendation ends with what to do in the ESP
 ## Design system
 
 * **Light / Dark / System** (the slider icon top-right; remembered in the local database). Optional **accent team** tints selected states with an NFL team's color.
-* **Brand data by stable IDs** - NFL names, abbreviations, colors and logos come from ESPN's public team directory (cached 30 days); headshots come from ESPN's CDN by ESPN player id. Every image URL is verified once server-side, so a missing photo or logo becomes initials instead of a broken image. Defenses use team logos.
-* **Materials** - light glass (nav, chips), medium glass (floating panels, inputs, AI/offer cards), near-solid surfaces for dense rosters and tables. Solid fallbacks apply automatically for `prefers-reduced-transparency` or browsers without `backdrop-filter`.
-* **Type** - Geist (UI), Barlow Semi Condensed (scores, team and player names), tabular numerals for every score and projection, Geist Mono only for the AI tool trace. Fonts load from Google Fonts; offline it falls back to system fonts.
-* **Motion** - 140 / 220 / 380 ms tiers, one easing curve, press feedback on buttons, everything disabled under `prefers-reduced-motion`.
-* **Responsive** - on phones the nav becomes an icon-only bottom bar and rows/scoreboards restack.
-* Source: `static/theme.css` (tokens + components), `theme.py`, `ui.py`, `assets.py`.
+* **Brand data by stable IDs** - NFL names, abbreviations, colors and logos come from ESPN's public team directory (cached 30 days); headshots come from ESPN's CDN by ESPN player id and lazy-load at their displayed size. A missing photo or logo becomes initials instead of a broken image. Defenses use team logos. Fantasy-team logos that need your ESPN cookies are fetched server-side and served from `/api/img/fteam/<id>`; the cookies never reach the browser.
+* **Fast by construction** - flat surfaces; `backdrop-filter` only on the small sticky header and nav pill, never on scrolling areas; no looping animations; skeleton loaders only on a cold first visit.
+* **Type** - Geist (UI), Barlow Semi Condensed (scores, team and player names), tabular numerals for every score and projection. Fonts load from Google Fonts; offline it falls back to system fonts.
+* **Responsive** - rows, scoreboards and trade cards restack on phones.
+* Source: `web/src/styles.css` (tokens + components), `web/src/ui.tsx` (shared components), `theme.py` (saved preferences), `assets.py`.
 
 ### Known limits (need new data or backend work, so not faked)
 
@@ -170,15 +179,15 @@ referenced by owner first name ("Kaden"). Recommendations are written to the `re
 python -m pytest -q
 ```
 
-Covers the season/market/acceptance models, trade search and moves rules, the lineup optimizer (including a brute-force optimality check), news alert logic, every page rendering (Streamlit AppTest) and the agent loop (with a scripted fake Claude, so no API key is needed). The assistant's wording on tricky scenarios is a separate manual suite: `RUN_AGENT_SCENARIOS=1 python -m tests.agent_scenarios.run_live`. Backtests: `python -m tools.trade_backtest`, `python -m edge.dst`.
+Covers the season/market/acceptance models, trade search and moves rules, the lineup optimizer (including a brute-force optimality check), news alert logic, every API endpoint (FastAPI TestClient) and the agent loop (with a scripted fake Claude, so no API key is needed). The assistant's wording on tricky scenarios is a separate manual suite: `RUN_AGENT_SCENARIOS=1 python -m tests.agent_scenarios.run_live`. Backtests: `python -m tools.trade_backtest`, `python -m edge.dst`.
 
 ## Layout
 
 ```
-app.py            shell: theme, header, search, nav          view_*.py     one module per page
-ctx.py            per-session data + cross-page actions      dialogs.py    player sheet + AI sheet
-ui.py             HTML components (rows, scoreboard, chart)  assets.py     team brand + verified images
-theme.py / static/theme.css  design tokens + styles          ai_runner.py  runs the AI (subscription or API)
+server/           FastAPI app + serializers                   web/          React + Vite frontend (src/pages/*)
+ctx.py            cached process-wide data + engines          fmt.py        small pure formatting helpers
+assets.py         team brand + images                         ai_runner.py  runs the AI (subscription or API)
+theme.py          saved theme preferences                     Makefile      setup / dev / start / test
 league_client.py  the only espn-api importer                 valuation.py  value model + fairness
 models.py         dataclasses used everywhere                trading.py    trade search + evaluator
 config.py / db.py env config, SQLite cache, log, settings    moves.py      add/drop + streaming engine

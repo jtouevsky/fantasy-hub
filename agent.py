@@ -17,7 +17,7 @@ import news as news_mod
 import strategy as strategy_mod
 import trading
 import assets
-from ui import EDGE_LABEL
+from fmt import EDGE_LABEL
 from models import LeagueSnapshot, PlayerInfo
 from optimizer import plan_lineup
 from sleeper import SleeperIndex
