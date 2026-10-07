@@ -106,6 +106,20 @@ def _sleeper_to_gsis(db_path: Optional[str]) -> dict[str, str]:
         return {r["sleeper_id"]: r["gsis_id"] for r in c.execute("SELECT sleeper_id, gsis_id FROM id_crosswalk WHERE sleeper_id IS NOT NULL AND gsis_id IS NOT NULL")}
 
 
+def current_week_events(h: Hist, season: int, week: int, events: list[dict]) -> list[dict]:
+    """Only news published AFTER the team's most recent game day can describe this week's availability; earlier items
+    (e.g. 'out for Sunday's game' written before last week's game) are stale and must not mark anyone out."""
+    g = h.games[(h.games.season == season) & (h.games.week < week)]
+    last = g.groupby("team")["gameday"].max().to_dict()
+    out = []
+    for ev in events:
+        team = ids.norm_team(ev.get("team", ""))
+        cutoff = last.get(team)
+        if cutoff is None or str(ev.get("published_at", ""))[:10] > str(cutoff)[:10]:
+            out.append(ev)
+    return out
+
+
 def collect_injuries(h: Hist, tw: int, players: list, gsis_of: dict[int, str], sleeper_index=None, news_events: Optional[list[dict]] = None,
                      db_path: Optional[str] = None) -> dict[str, InjuryState]:
     """Merge every injury source into one state per player (GSIS-keyed). Most severe status wins; all agreeing sources are listed."""
@@ -235,7 +249,10 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
     res.data_status["id_crosswalk"] = f"{len(gsis_of)} of {sum(1 for p in players if p.position in SKILL)} skill players matched"
 
     # --- injuries
-    res.injuries = collect_injuries(hist, tw, players, gsis_of, sleeper_index, news_events, db_path)
+    news_now = current_week_events(hist, season, week, news_events or [])
+    if news_events and len(news_now) < len(news_events):
+        res.data_status["news_stale"] = f"{len(news_events) - len(news_now)} older news items ignored (they describe a game that's already been played)"
+    res.injuries = collect_injuries(hist, tw, players, gsis_of, sleeper_index, news_now, db_path)
     res.data_status["injuries"] = f"{len(res.injuries)} players on the combined injury list (NFL report + Sleeper + ESPN + news)"
     if not (hist.inj.t == tw).any():
         res.data_status["injuries"] += "; the NFL report for this week isn't published yet"

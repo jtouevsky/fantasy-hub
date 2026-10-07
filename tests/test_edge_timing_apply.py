@@ -58,3 +58,15 @@ def test_players_without_adjustments_keep_espn_projection():
     p = P(2, "No Data", proj=8.0)
     eapply.apply_result([p], EngineResult(2026, 5, 0.0))
     assert p.week_proj == 8.0 and not p.has_edge and p.espn_week_proj == 8.0
+
+
+def test_news_from_before_the_last_game_day_is_ignored_for_this_week():
+    import pandas as pd
+    from edge.engine import current_week_events
+    from edge.history import Hist
+    games = pd.DataFrame([dict(season=2026, week=4, team="CHI", gameday="2026-10-04"), dict(season=2026, week=4, team="CAR", gameday="2026-10-04")])
+    h = Hist([2026], pd.DataFrame(), games, pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+    stale = {"team": "CHI", "published_at": "2026-10-02T15:00:00Z", "status": "out"}        # 'out for Sunday' written before the Oct 4 game
+    fresh = {"team": "CHI", "published_at": "2026-10-06T09:00:00Z", "status": "out"}
+    unknown_team = {"team": "XXX", "published_at": "2026-09-01T00:00:00Z"}
+    assert current_week_events(h, 2026, 5, [stale, fresh, unknown_team]) == [fresh, unknown_team]
