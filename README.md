@@ -4,6 +4,8 @@ A personal, **read-only** team-manager for an ESPN fantasy football league: dash
 waiver suggestions, trade analyzer/finder, news, and an AI chat agent. It never changes your roster -
 every recommendation ends with something for you to do by hand in the ESPN app.
 
+> **Not affiliated with ESPN, the NFL, Sleeper or Anthropic.** Team logos and player photos are loaded from their public CDNs at runtime and are not bundled. The app only *reads* your own league using your own ESPN cookies (kept in a git-ignored `.env`); nothing about your league is stored in this repository. Fantasy projections and trade advice are estimates, not guarantees. MIT licensed (see `LICENSE`).
+
 ## Setup
 
 ```bash
