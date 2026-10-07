@@ -113,6 +113,7 @@ class Defense(Module):
         return float(np.abs(rows.pts - rows.base - delta).mean())
 
     def _feats(self, h, rows) -> pd.DataFrame:
+        live = getattr(self, "live_status", None)               # live: {team: {gsis: (pos, status, practice)}} instead of the nflverse report
         p_abs = self.coefs.get("p_absent", DEFAULT_P_ABSENT)
         cache: dict = {}
         f = {k: np.zeros(len(rows)) for k in FEATURES}
@@ -120,7 +121,8 @@ class Defense(Module):
         for n, r in enumerate(rows.itertuples()):
             key = (r.team, r.opp, r.t)
             if key not in cache:
-                cache[key] = features_for(h, r.team, r.opp, r.t, p_abs)
+                cache[key] = features_for(h, r.team, r.opp, r.t, p_abs, live.get(r.opp, {}) if live is not None else None,
+                                          live.get(r.team, {}) if live is not None else None)
             v = cache[key]
             for k in FEATURES:
                 f[k][n] = v[k]

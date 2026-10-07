@@ -38,6 +38,21 @@ def build_signals(h) -> pd.DataFrame:
     return out
 
 
+def signals_asof(h, gsis_list, tw: int) -> pd.DataFrame:
+    """Signals for UPCOMING games (time tw), from games strictly before tw. Same definitions as build_signals (4-game xFP gap
+    needing >= 3 games; snap-share last 2 games vs the 2 before) so live numbers match what was backtested."""
+    x = h.xfp[(h.xfp.t < tw) & h.xfp.gsis.isin(list(gsis_list))].sort_values(["gsis", "t"])
+    x = x.assign(gap=x.xfp - x.xfp_actual)
+    g4 = x.groupby("gsis").tail(4).groupby("gsis").agg(gap4=("gap", "mean"), n=("gap", "size"), xfp4=("xfp", "mean"))
+    g4 = g4[g4.n >= 3].drop(columns="n")
+    s = h.snaps[(h.snaps.t < tw) & (h.snaps.offense_pct > 0) & h.snaps.gsis.isin(list(gsis_list))].sort_values(["gsis", "t"])
+    def trend(v):
+        v = v.to_numpy()
+        return (v[-2:].mean() - v[-4:-2].mean()) if len(v) >= 4 else np.nan
+    ds = s.groupby("gsis")["offense_pct"].apply(trend).rename("dsnap")
+    return pd.concat([g4, ds], axis=1).reset_index().rename(columns={"index": "gsis"})
+
+
 def tag_for(gap4, dsnap) -> list[str]:
     tags = []
     if gap4 == gap4 and gap4 >= BUY_LOW_GAP:
@@ -66,6 +81,8 @@ class Regression(Module):
         return np.c_[tuple(cols)] if cols else np.zeros((int(m.sum()), 0))
 
     def _sig(self, h, rows):
+        if getattr(self, "override", None) is not None:          # live: signals computed as-of the upcoming game
+            return rows[["gsis"]].merge(self.override, on="gsis", how="left").set_index(rows.index)
         s = build_signals(h)
         return rows[["gsis", "t"]].merge(s, on=["gsis", "t"], how="left").set_index(rows.index)
 
