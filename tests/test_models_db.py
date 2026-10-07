@@ -1,3 +1,4 @@
+import pytest
 import demo_data
 import db
 from models import LeagueSnapshot
@@ -23,3 +24,11 @@ def test_cache_ttl_and_recommendation_log():
         db.set_outcome(rid, "good", path)
         rows = db.list_recommendations(path=path)
         assert rows[0]["summary"] == "Give A for B" and rows[0]["outcome"] == "good"
+
+
+def test_find_team_by_owner_first_name():
+    import demo_data
+    snap = demo_data.build_demo_snapshot()
+    assert snap.find_team("kaden").team_id == 2
+    with pytest.raises(LookupError):
+        snap.find_team("nobody")

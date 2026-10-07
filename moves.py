@@ -145,7 +145,10 @@ class MoveEngine:
         if p.position in ("D/ST", "K") or p.games_played < 3:
             return False
         ppg = self.season.model.ppg(p)
-        return p.week_proj - ppg > max(SPIKE_POINTS, 0.5 * ppg)
+        jump = p.week_proj - ppg
+        if p.edge and p.edge_total >= 0.6 * jump:                  # the jump has a stated, sourced reason (injury cascade, matchup...): not a mystery outlier
+            return False
+        return jump > max(SPIKE_POINTS, 0.5 * ppg)
 
     # ---- validation (deterministic; the assistant cannot bypass it) --------------------------
     def validate(self, add: PlayerInfo, drop: Optional[PlayerInfo], gain_week: float = 0.0, gain_ros: float = 0.0, starts_add: int = 0) -> list[str]:
@@ -272,7 +275,8 @@ class MoveEngine:
             else:
                 reason = f"{best.name} projects {best_pts:.1f} vs {cur_pts:.1f} for {cur.name} (+{gain:.1f})" + (f": {why_best}" if why_best else "") + "."
         else:
-            reason = f"Keep your current {name}" + (f" ({cur.name}, {cur_pts:.1f})" if cur else "") + f": the best alternative adds only {max(gain, 0):.1f} (< {s.stream_swap_gain:g} needed)."
+            alt = (f"no free agent projects higher" if gain <= 0 else f"the best alternative ({best.name}) adds only {gain:.1f}, below the +{s.stream_swap_gain:g} needed")
+            reason = f"Keep your current {name}" + (f" ({cur.name}, {cur_pts:.1f} this week)" if cur else "") + f": {alt}."
         plan = ""
         if pos == "D/ST" and self.dst_next:
             nxt = [(self.dst_pts(p, True)[0], p) for p in self.fas if p.position == pos and p.pro_team in self.dst_next]

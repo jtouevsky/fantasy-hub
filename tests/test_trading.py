@@ -136,3 +136,15 @@ def test_large_model_vs_market_gap_is_flagged_speculative():
     other = snap.find_team("Kaden")
     ev = tr.evaluate(w, other, [next(p for p in snap.my_team.roster if p.player_id == a.player_id)], [next(p for p in other.roster if p.player_id == b.player_id)])
     assert ev.speculative and any("Speculative" in n for n in ev.notes)
+
+
+def test_finder_respects_wanted_position_and_returns_valid_packages():
+    snap, s, m, w = build({})
+    other = snap.find_team("Kaden")
+    out = tr.search(w, tr.Constraints(partner=other.team_id, want_positions={"WR"}, max_results=10))
+    mine = {p.player_id for p in snap.my_team.roster}
+    theirs = {p.player_id for p in other.roster}
+    for e in out:
+        assert all(p.position == "WR" for p in e.get)
+        assert {p.player_id for p in e.give} <= mine and {p.player_id for p in e.get} <= theirs
+        assert len(e.give) <= 3 and len(e.get) <= 2
