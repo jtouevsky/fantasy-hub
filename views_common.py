@@ -83,7 +83,7 @@ def stream_card(ctx: Ctx, sp, key: str) -> None:
         html(ctx.brand.rec_card(f"Stream {sp.position}: add {sp.best.name}" + (f", drop {cur}" if sp.current else ""), ui.esc(sp.reason), ic="autorenew",
                                 gain=sp.gain, gain_label="this week", why=sp.plan_ahead, players=[sp.best]))
     else:
-        html(ui.notice(f"<b>Keep your current {ui.esc(sp.position)}</b> ({ui.esc(cur)}). {ui.esc(sp.reason)}" + (f" {ui.esc(sp.plan_ahead)}" if sp.plan_ahead else ""), "good", "check_circle"))
+        html(ui.notice(f"<b>{ui.esc(sp.reason)}</b>" + (f" {ui.esc(sp.plan_ahead)}" if sp.plan_ahead else ""), "good", "check_circle"))
 
 
 def moves_block(ctx: Ctx, key: str, max_moves: int = 3, show_streams: bool = True, limit_cards: int = 99, show_empty: bool = True) -> int:

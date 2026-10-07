@@ -29,3 +29,13 @@ def test_trades_modes_render():
         at.session_state["tr_mode"] = mode
         at.run()
         assert not at.exception, (mode, [e.value for e in at.exception])
+
+
+@pytest.mark.parametrize("tab", ["My strategy", "Edge engine", "Recommendation log"])
+def test_more_tabs_render(tab):
+    at = AppTest.from_file(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py"), default_timeout=60)
+    at.session_state["page_req"] = "More"
+    at.run()
+    at.session_state["more_sel"] = tab
+    at.run()
+    assert not at.exception, (tab, [e.value for e in at.exception])
