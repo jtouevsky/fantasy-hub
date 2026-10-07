@@ -1,6 +1,7 @@
 """Shared per-session context for all views: data, model, branding, and cross-page actions."""
 from __future__ import annotations
 
+import json
 import os
 import random
 import time
@@ -13,9 +14,11 @@ import streamlit as st
 import agent
 import db
 import demo_data
+import hub as hub_mod
 import sleeper
+import strategy as strategy_mod
 from config import Config, load_config
-from league_client import LeagueClient, get_free_agents, get_player_history, get_snapshot
+from league_client import LeagueClient, get_activity, get_free_agents, get_market, get_player_history, get_snapshot
 from models import LeagueSnapshot, PlayerInfo, TeamInfo
 from optimizer import LineupPlan, plan_lineup
 from ui import Brand
@@ -51,6 +54,7 @@ class Ctx:
     events: list = field(default_factory=list)   # AI-parsed news events
     scan_status: str = ""
     watchlist: set = field(default_factory=set)
+    hub: Optional[hub_mod.Hub] = None      # v2 engines: strategy, season model, market, trade world, move engine
 
     # ---- convenience ----
     @property
@@ -95,7 +99,7 @@ class Ctx:
 
     def agent_tools(self) -> agent.AgentTools:
         return agent.AgentTools(self.snap, self.model, lambda pos, n: self.free_agents(pos, n), self.news_fetch(),
-                                self.index, self.trending, self.cfg.db_path, self.edge, self.events)
+                                self.index, self.trending, self.cfg.db_path, self.edge, self.events, hub=self.hub)
 
     # ---- cross-page actions (callbacks) ----
     @staticmethod
@@ -192,10 +196,46 @@ def load_ctx(force: bool = False) -> Ctx:
         model = ValueModel(snap, fas)
         st.session_state["_model"] = {"key": mkey, "model": model}
 
+    hub = _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force)
+
     brand = Brand(cfg.db_path, {"espn_s2": cfg.espn_s2, "SWID": cfg.swid} if not demo and cfg.espn_s2 else None)
-    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path))
+    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path), hub=hub)
     brand.watch = ctx.watchlist
     return ctx
+
+
+def _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force) -> hub_mod.Hub:
+    """The v2 engines (strategy, season model, market, trade world, move engine), rebuilt when data or strategy changes."""
+    strat = strategy_mod.load(cfg.db_path)
+    from dataclasses import asdict
+    hk = (mkey, json.dumps(asdict(strat), sort_keys=True, default=str))
+    ch = st.session_state.get("_hub")
+    if ch and ch["key"] == hk and not force:
+        return ch["hub"]
+    signals, activity, dst, dst_next = {}, [], {}, {}
+    if not demo:
+        try:
+            signals = get_market(_client(), force=force)
+        except Exception as e:
+            warnings.append(f"Market data unavailable ({type(e).__name__}); trade market values fall back to the model.")
+        try:
+            activity = get_activity(_client(), force=force)
+        except Exception as e:
+            warnings.append(f"League activity unavailable ({type(e).__name__}); manager history signals are off.")
+        everyone = [p for t in snap.teams for p in t.roster] + list(fas)
+        hub_mod.apply_return_games(everyone, edge)
+        if strat.streaming:
+            try:
+                from edge import dst as dst_mod
+                h = edge_live.get_hist(snap.year, cfg.db_path)
+                seasons = [snap.year - 2, snap.year - 1, snap.year]
+                dst = dst_mod.live_estimates(h, seasons, snap.year, snap.week)
+                dst_next = dst_mod.live_estimates(h, seasons, snap.year, snap.week + 1)
+            except Exception as e:
+                warnings.append(f"D/ST matchup model unavailable ({type(e).__name__}); streaming uses ESPN's D/ST projection only.")
+    hub = hub_mod.build(snap, model, fas, cfg.db_path, signals, activity, dst, dst_next, strat)
+    st.session_state["_hub"] = {"key": hk, "hub": hub}
+    return hub
 
 
 def _sub_ok() -> bool:
