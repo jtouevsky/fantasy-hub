@@ -70,10 +70,11 @@ def _hungarian(cost: list[list[float]]) -> list[int]:
 
 
 def best_lineup(players: list[PlayerInfo], starter_slots: dict[str, int],
-                value=availability) -> dict[int, Optional[PlayerInfo]]:
-    """Return {slot_index: player or None}; slot_index follows expand_slots() order."""
+                value=availability, eligible=can_start) -> dict[int, Optional[PlayerInfo]]:
+    """Return {slot_index: player or None}; slot_index follows expand_slots() order.
+    `value` scores a player; `eligible` filters who may start (default: healthy, not on bye)."""
     slots = expand_slots(starter_slots)
-    cands = [p for p in players if can_start(p)]
+    cands = [p for p in players if eligible(p)]
     n, m = len(slots), len(cands)
     if n == 0:
         return {}
