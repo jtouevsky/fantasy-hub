@@ -50,17 +50,41 @@ No credentials yet? Click **Use demo data** on the first screen to explore with 
 
 ## What's in the app
 
-| Tab | What it does |
+| Page | What it does |
 |---|---|
-| **Dashboard** | Your roster (projected/actual points), this week's matchup, standings, injury & bye report. |
-| **Lineup** | Optimal starting lineup vs your current one, with the projected gain of each swap. |
-| **Waivers** | Free agents ranked by rest-of-season and this-week value, Sleeper trending/breakout flags, and concrete "add X, drop Y, +Z pts/week" moves. |
-| **Trades** | *Find me a trade* (target team + the player you're offering + a target split like 60/40) or *evaluate* a specific deal. |
-| **News** | ESPN player news + Sleeper injury data for your roster and your opponent's, with alerts that should change your lineup. |
-| **AI Chat** | Ask Claude things in plain English. It uses the same tools as the tabs and never makes up numbers. |
-| **Log** | Every recommendation the agent made, so you can mark later whether it was good. |
+| **Overview** | The weekly hub: matchup scoreboard (projected vs actual), lineup status, next lineup lock, what needs attention (lineup swaps, waiver moves, roster news), league standing. |
+| **My Team** | Starters / bench / IR as compact rows with headshots, opponent, kickoff time, bye/injury/lock status. *Preview the optimal lineup* shows where players would move. Read-only: changes are made in the ESPN app. |
+| **Matchup** | Both teams' starters head to head by slot, with a clear "projected vs actual" split and how many starters have yet to play. |
+| **Players** | Suggested add/drop moves, then every free agent with filters (position, healthy only, search) and sorts (rest of season, this week, Sleeper trending). Shows waiver priority and FAAB when your league uses them. |
+| **Trades** | *Find me a trade* (target team, the player you're offering, a target split like 60/40) or *evaluate* a specific deal, shown as two-sided offer cards with a value meter and each team's lineup impact. |
+| **League** | Standings and this week's projected slate. |
+| **Assistant** | Chat with Claude (your subscription), with the league/week/scoring context shown. |
+| **More** | News and injury alerts for your roster and your opponent's, and the recommendation log. |
+
+**Player sheet** - click any row (or search with `/` or `Cmd/Ctrl+K`) for a portrait, team, ownership, a **fantasy-points-by-game chart under your league's scoring** (2025 + 2026, from ESPN's scored weekly stats; if a week ever has raw stats but no score, the points are computed from your scoring rules and labelled), news, lineup/waiver/trade context, a side-by-side compare, and AI buttons.
+
+**AI everywhere it matters** - "Ask AI why" / "Explain projection" / "Review my lineup" / "Summarize news" buttons open a sheet that shows the context used, the AI's answer (labelled *AI advice*), what tools it looked up, and when it was written. The AI never changes anything; it can't.
 
 Everything is **read-only**. Each recommendation ends with what to do in the ESPN app.
+
+## Design system
+
+* **Light / Dark / System** (the slider icon top-right; remembered in the local database). Optional **accent team** tints selected states with an NFL team's color.
+* **Brand data by stable IDs** - NFL names, abbreviations, colors and logos come from ESPN's public team directory (cached 30 days); headshots come from ESPN's CDN by ESPN player id. Every image URL is verified once server-side, so a missing photo or logo becomes initials instead of a broken image. Defenses use team logos.
+* **Materials** - light glass (nav, chips), medium glass (floating panels, inputs, AI/offer cards), near-solid surfaces for dense rosters and tables. Solid fallbacks apply automatically for `prefers-reduced-transparency` or browsers without `backdrop-filter`.
+* **Type** - Geist (UI), Barlow Semi Condensed (scores, team and player names), tabular numerals for every score and projection, Geist Mono only for the AI tool trace. Fonts load from Google Fonts; offline it falls back to system fonts.
+* **Motion** - 140 / 220 / 380 ms tiers, one easing curve, press feedback on buttons, everything disabled under `prefers-reduced-motion`.
+* **Responsive** - on phones the nav becomes an icon-only bottom bar and rows/scoreboards restack.
+* Source: `static/theme.css` (tokens + components), `theme.py`, `ui.py`, `assets.py`.
+
+### Known limits (need new data or backend work, so not faked)
+
+* No live-score feed: scores update when you press **Refresh** (cache TTL applies); the app says "Updated N min ago" instead of "LIVE".
+* No win-probability model (the scoreboard says it's ESPN's projections only).
+* One league at a time (configured in `.env`).
+* No usage/opportunity metrics (snaps, targets) or per-game opponent history; the chart shows fantasy points only.
+* No league activity feed or waiver-claim deadlines beyond the waiver days ESPN reports.
+* Lineup/waiver/trade changes can't be submitted from here (by design).
 
 ## How the player value model works (`valuation.py`)
 
@@ -146,10 +170,14 @@ ranking, news alert logic, and the agent loop (with a scripted fake Claude, so n
 ## Layout
 
 ```
-app.py            Streamlit UI (all tabs)           optimizer.py   best lineup (Hungarian assignment)
-league_client.py  the only espn-api importer        valuation.py   value model + fairness
-models.py         dataclasses used everywhere       trades.py      evaluator + finder
-config.py / db.py env config, SQLite cache + log    waivers.py     add/drop suggestions
-sleeper.py        injuries + trending               news.py        news feed + alerts
-agent.py          Claude tool-use agent             demo_data.py   fake league for tests/demo
+app.py            shell: theme, header, search, nav          view_*.py     one module per page
+ctx.py            per-session data + cross-page actions      dialogs.py    player sheet + AI sheet
+ui.py             HTML components (rows, scoreboard, chart)  assets.py     team brand + verified images
+theme.py / static/theme.css  design tokens + styles          ai_runner.py  runs the AI (subscription or API)
+league_client.py  the only espn-api importer                 valuation.py  value model + fairness
+models.py         dataclasses used everywhere                trades.py     evaluator + finder
+config.py / db.py env config, SQLite cache, log, settings    waivers.py    add/drop suggestions
+sleeper.py        injuries + trending                        news.py       news feed + alerts
+agent.py          Claude tool-use agent                      demo_data.py  fake league for tests/demo
+optimizer.py      best lineup (Hungarian assignment)
 ```
