@@ -5,6 +5,7 @@ This file is the shell (theme, header, search, navigation, dialogs); each page l
 """
 from __future__ import annotations
 
+import os
 import streamlit as st
 
 st.set_page_config(page_title="Fantasy Hub", page_icon=":material/sports_football:", layout="wide", initial_sidebar_state="collapsed")
@@ -134,7 +135,10 @@ def main() -> None:
         return
     except Exception as e:
         import logging
-        logging.getLogger("fantasy_hub").exception("load_ctx failed")
+        import traceback
+        os.makedirs("data", exist_ok=True)
+        with open("data/last_error.log", "w") as f:
+            f.write(traceback.format_exc())
         setup_screen(cfg, f"Something went wrong loading your league ({type(e).__name__}). Your cached data, if any, is untouched.")
         return
 
