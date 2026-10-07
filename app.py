@@ -3,6 +3,7 @@
 Read-only: every recommendation ends with something to do manually in the ESPN app."""
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -10,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 import db
+import agent
 import demo_data
 from config import load_config
 from league_client import LeagueClient, LeagueConnectionError, get_free_agents, get_snapshot
@@ -322,6 +324,88 @@ def render_news(snap: LeagueSnapshot, index) -> None:
 
 
 # ---------------------------------------------------------------------------
+# AI chat + recommendation log
+# ---------------------------------------------------------------------------
+EXAMPLES = [
+    "Who should I start this week and why?",
+    "Find me the best trade with Kaden for my Trey McBride to get one of his receivers, slightly in my favor, like 60/40.",
+    "Which free agents should I pick up?",
+    "Is anyone on my team injured?",
+]
+
+
+def render_chat(snap: LeagueSnapshot, model: ValueModel, index, trending) -> None:
+    cfg = load_config()
+    if not cfg.anthropic_api_key:
+        st.warning("Add `ANTHROPIC_API_KEY` to your `.env` (and restart) to enable the chat agent.")
+        return
+    import anthropic
+
+    client_espn = None if using_demo() else _client()
+    tools = agent.AgentTools(
+        snap, model, lambda pos, n: load_free_agents(pos, n),
+        (lambda pid, n: client_espn.fetch_player_news(pid, n)) if client_espn else None,
+        index, trending, cfg.db_path)
+
+    st.session_state.setdefault("chat_api", [])      # raw message history sent to Claude
+    st.session_state.setdefault("chat_ui", [])       # [(role, text, trace)]
+    top = st.columns([6, 1])
+    top[0].caption(f"Model: {cfg.anthropic_model} · reads your league through tools; never invents stats; read-only.")
+    if top[1].button("Clear"):
+        st.session_state["chat_api"], st.session_state["chat_ui"] = [], []
+        st.rerun()
+
+    for role, text, trace in st.session_state["chat_ui"]:
+        with st.chat_message(role):
+            st.markdown(text)
+            if trace:
+                with st.expander(f"What I looked up ({len(trace)})"):
+                    for t in trace:
+                        st.markdown(f"- `{t['tool']}` {json.dumps(t['input'])}" + (" **(error)**" if t["error"] else ""))
+
+    prompt = st.chat_input("Ask about your lineup, waivers, trades, injuries...")
+    if not st.session_state["chat_ui"]:
+        st.caption("Try: " + " · ".join(f"_{e}_" for e in EXAMPLES))
+    if not prompt:
+        return
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            try:
+                res = agent.run_turn(anthropic.Anthropic(api_key=cfg.anthropic_api_key), cfg.anthropic_model, tools,
+                                     st.session_state["chat_api"], prompt)
+            except anthropic.APIError as e:
+                st.error(f"Claude API error: {getattr(e, 'message', e)}")
+                return
+        st.markdown(res.text)
+    st.session_state["chat_api"] = res.history
+    st.session_state["chat_ui"] += [("user", prompt, []), ("assistant", res.text, res.tool_trace)]
+    st.rerun()
+
+
+def render_log() -> None:
+    cfg = load_config()
+    rows = db.list_recommendations(200, cfg.db_path)
+    if not rows:
+        st.info("No recommendations logged yet. Ask the chat agent for advice and they'll show up here.")
+        return
+    st.caption("Every recommendation the agent (or you, via the Trades tab) saved. Mark outcomes later to see whether the advice was good.")
+    df = pd.DataFrame([{
+        "ID": r["id"], "When": time.strftime("%b %d %H:%M", time.localtime(r["created_at"])), "Week": r["week"],
+        "Kind": r["kind"], "Source": r["source"], "Summary": r["summary"][:300], "Outcome": r["outcome"] or "",
+    } for r in rows])
+    st.dataframe(df, hide_index=True, width="stretch")
+    with st.form("outcome"):
+        c1, c2, c3 = st.columns([1, 2, 1])
+        rid = c1.number_input("Recommendation ID", min_value=1, step=1, value=int(rows[0]["id"]))
+        out = c2.text_input("Outcome / notes", placeholder="good - won by 12 / bad - he got hurt / ignored")
+        if c3.form_submit_button("Save outcome") and out:
+            db.set_outcome(int(rid), out, cfg.db_path)
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Shell
 # ---------------------------------------------------------------------------
 def render_setup_help(err: str | None = None) -> None:
@@ -372,7 +456,7 @@ def main() -> None:
                + f" · {snap.bench_slots} bench")
 
     fas, model, index, trending = load_context(snap)
-    tab_dash, tab_lineup, tab_waiver, tab_trade, tab_news = st.tabs(["Dashboard", "Lineup", "Waivers", "Trades", "News"])
+    tab_dash, tab_lineup, tab_waiver, tab_trade, tab_news, tab_chat, tab_log = st.tabs(["Dashboard", "Lineup", "Waivers", "Trades", "News", "AI Chat", "Log"])
     with tab_dash:
         render_dashboard(snap)
     with tab_lineup:
@@ -383,6 +467,10 @@ def main() -> None:
         render_trades(snap, model)
     with tab_news:
         render_news(snap, index)
+    with tab_chat:
+        render_chat(snap, model, index, trending)
+    with tab_log:
+        render_log()
 
 
 main()
