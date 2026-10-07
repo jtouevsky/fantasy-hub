@@ -54,7 +54,10 @@ def render(ctx: Ctx) -> None:
     blocks = []
     for a in timing_alerts(me.roster, ctx.edge):
         blocks.append(ui.notice(f"<b>{'Re-check before lock' if a['kind'] == 'gtd' else 'Teammate watch'}</b> · {ui.esc(a['message'])}", "warn" if a["severity"] == "watch" else "bad", "schedule"))
-    relevant = [ev for ev in ctx.events if ev.get("player_espn_id") in mine and (ev.get("status") or ev.get("event_type") in ("role_change", "depth_chart", "suspension"))]
+    starting = {p.player_id for p in me.roster if p.lineup_slot not in ("BE", "IR")}
+    # a real status (out/doubtful/questionable/IR/suspended) matters for anyone on my roster; role/depth-chart notes only matter for my starters
+    relevant = [ev for ev in ctx.events if ev.get("player_espn_id") in mine and (ev.get("status") not in (None, "active") or
+                                                                              (ev.get("event_type") in ("role_change", "depth_chart", "suspension") and ev.get("player_espn_id") in starting))]
     blocks += [ui.news_event_html(ev) for ev in relevant[:4]]
     if ctx.edge:
         for c in ctx.edge.cascades:
