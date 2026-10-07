@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS news_events (
     news_key TEXT PRIMARY KEY, player_espn_id INTEGER, raw_text TEXT NOT NULL, parsed TEXT, source_url TEXT, published_at TEXT,
     parsed_at REAL, error TEXT
 );
+CREATE TABLE IF NOT EXISTS negotiations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, team_id INTEGER NOT NULL, manager TEXT NOT NULL,
+    give_ids TEXT NOT NULL, get_ids TEXT NOT NULL, give_names TEXT NOT NULL, get_names TEXT NOT NULL,
+    response TEXT NOT NULL,              -- accepted | rejected | countered | pending
+    note TEXT, model_logit REAL           -- the model's pre-response logit (None if unknown), used for the Bayesian tendency update
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS recommendations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
