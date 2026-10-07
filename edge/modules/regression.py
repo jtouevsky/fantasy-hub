@@ -109,7 +109,8 @@ class Regression(Module):
                 continue
             bits = []
             if g == g and abs(g) >= 1.0:
-                bits.append(f"expected {g:+.1f} more pts/game than he scored over his last 4 ({'under' if g > 0 else 'over'}-performing his opportunities)")
+                bits.append(f"his opportunities were worth {g:.1f} more pts/game than he scored over his last 4 (under-performing; expect a bounce)" if g > 0 else
+                            f"he scored {-g:.1f} more pts/game than his opportunities were worth over his last 4 (over-performing; expect a fade)")
             if ds == ds and abs(ds) >= 0.05:
                 bits.append(f"snap share {'up' if ds > 0 else 'down'} {abs(ds) * 100:.0f} pts recently")
             reasons.append("; ".join(bits) + f" → {d:+.1f}")

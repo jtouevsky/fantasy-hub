@@ -99,6 +99,12 @@ class EngineResult:
         return p.adjustments if p else []
 
 
+def restate(reason: str, module_value: float, final_value: float) -> str:
+    """Module reasons end with their own raw estimate ('... -> +2.0'); the applied number is smaller after strength and live
+    haircuts, so rewrite it - a 'why' must match the number it explains."""
+    return reason.replace(f"{module_value:+.1f}", f"{final_value:+.1f}") if abs(module_value - final_value) >= 0.05 else reason
+
+
 # ---------------------------------------------------------------------------
 # injuries
 # ---------------------------------------------------------------------------
@@ -292,7 +298,7 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
         a = params["modules"].get(alpha_key, {}).get("alpha", 0.0)
         d = float(delta) * a * live.get(alpha_key, 1.0)
         if abs(d) >= MIN_ADJ and a > 0:
-            raw.append(Adjustment(int(row.espn_id), season, week, kind, round(d, 3), reason, source, conf, now, None, scope))
+            raw.append(Adjustment(int(row.espn_id), season, week, kind, round(d, 3), restate(reason, float(delta), d), source, conf, now, None, scope))
         return d
 
     # --- vegas + weather
@@ -332,6 +338,7 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
                 eid = gsis_to_espn.get(g)
                 delta = info["delta"] * scale.get(pos, 0.5)
                 reason, conf = explain(prep, info, words)
+                reason = restate(reason, info["delta"], delta)
                 causes = [absent[c[0]][2] for c in info["causes"] if c[0] in absent]
                 src_txt = "Injury status: " + "; ".join(sorted({x for c in causes for x in c.sources})) + " | nflverse game history (with/without + flow rates)"
                 casc["beneficiaries"].append({"gsis": g, "espn_id": eid, "name": prep.name_of.get(g, ""), "pos": pos, "weekly_pts": round(delta, 2), "reason": reason,

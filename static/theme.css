@@ -404,3 +404,6 @@ details.why .fine { margin-top: 6px; color: var(--ink-3); font-size: 11.5px; }
 .edge-table td { padding: 8px; border-top: 1px solid var(--line); vertical-align: top; } .edge-table .num { font-variant-numeric: tabular-nums; font-weight: 700; }
 
 details.why.ctx summary { background: transparent; border: 1px dashed var(--line-strong); color: var(--ink-3); }
+
+/* rows grow when 'why' is open: keep the avatar aligned with the name instead of floating mid-row */
+.row .who { align-items: flex-start; } .row .slot { margin-top: 15px; }

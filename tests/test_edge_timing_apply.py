@@ -70,3 +70,9 @@ def test_news_from_before_the_last_game_day_is_ignored_for_this_week():
     fresh = {"team": "CHI", "published_at": "2026-10-06T09:00:00Z", "status": "out"}
     unknown_team = {"team": "XXX", "published_at": "2026-09-01T00:00:00Z"}
     assert current_week_events(h, 2026, 5, [stale, fresh, unknown_team]) == [fresh, unknown_team]
+
+
+def test_reason_text_is_restated_to_match_the_applied_number():
+    from edge.engine import restate
+    assert restate("his opportunities outran production → -2.0", -2.0, -1.0) == "his opportunities outran production → -1.0"
+    assert restate("x → +3.2 pts (med)", 3.2, 3.2) == "x → +3.2 pts (med)"          # unchanged when nothing was scaled
