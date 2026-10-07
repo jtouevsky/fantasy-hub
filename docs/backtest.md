@@ -142,3 +142,45 @@ The per-player cap bounds how far edges can move a projection. Smaller = safer, 
 * Weather uses actual game-time wind/temperature as a stand-in for a forecast; live forecasts are noisier, so expect a smaller effect. Precipitation isn't in the historical table and is untested.
 * News scanning (module 6) and timing (module 7) can't be backtested - there is no historical news feed. They only feed modules 1-2 and alerts; they never create point adjustments by themselves.
 * One baseline, two seasons, one league's scoring. Small effects (< ~0.05 pts MAE) are within noise even when positive.
+
+## Stability-weighted value (volume vs touchdowns)
+
+`python -m edge.stable` (fits on 2024, validates on 2025; 2023 only supplies history). Source: nflverse `ff_opportunity` (expected receptions, yards, interceptions and expected TDs by pass/rush/receiving, from the quality of every target and carry) plus actual weekly stats, scored with **this league's scoring** (reception 1, pass TD 4, rush/rec TD 6, 0.04/0.1 yards).
+
+**Method.** Each player-game's points are split into *volume points* (yards, receptions, turnovers) and *touchdown points*. For the last 8 games (g = games available, at least 3):
+
+```
+stable_ppg = (g x vol_actual + kv x vol_expected)/(g + kv)  +  (g x td_actual + ktd x td_expected)/(g + ktd)
+```
+
+kv and ktd are chosen by grid search on 2024 to minimize next-game squared error: **kv = 8, ktd = 10**. The grid is flat near the optimum (MSE 48.1 at the best cell vs 49.2 for raw trailing points), and the data does not support regressing volume much more *lightly* than touchdowns: both are pulled about half-way to expectation at 8 games, and TDs are regressed at least as hard as volume. A **TD-dependent** player (scoring >= 8 ppg with >= 40% of it from TDs on fewer than 9 touches+targets per game) takes an extra fitted penalty (-2.11 pts/game, shrunk by sample size).
+
+**Does it predict better?** Comparators: trailing 8-game points per game and trailing 4-game points per game (the baseline the edge engine uses). ESPN's historical projections are not available from any free source, so they cannot be a comparator here; the live app still starts from ESPN's projection and uses this as the "actual" side of the blend.
+
+| Test | Season | n | Raw 8-game ppg | Raw 4-game ppg | **Stability-weighted** |
+|---|---|---|---|---|---|
+| Next-game MAE (pts) | 2024 (tune) | 4,211 | 5.363 | 5.502 | **5.314** |
+| Next-game MAE (pts) | 2025 (validate) | 4,258 | 5.384 | 5.496 | **5.308** |
+| Next-game rank correlation (weekly, Spearman) | 2024 | | 0.545 | | **0.554** |
+| Next-game rank correlation | 2025 | | 0.536 | | **0.548** |
+| Rest-of-season ppg MAE, decision week 5 | 2024 | 210 | 4.15 | | **4.00** |
+| Rest-of-season ppg MAE, decision week 5 | 2025 | 224 | 3.96 | | **3.73** |
+| Rest-of-season rank correlation (actual weeks 5-17 points) | 2024 | 210 | 0.565 | | **0.567** |
+| Rest-of-season rank correlation | 2025 | 224 | 0.634 | | **0.652** |
+
+The overall gain is small but consistent in both seasons (about 1.4% lower next-game error, 6% lower rest-of-season ppg error in 2025): most players are not TD flukes, so most estimates barely move. The effect is concentrated where it should be:
+
+**Same trailing points, different sources** (RB/WR/TE averaging 8-16 ppg over their last 8 games):
+
+| Season | Group | n | Trailing ppg | Next-game ppg (actual) | Model's estimate |
+|---|---|---|---|---|---|
+| 2024 | TD-fueled, < 9 touches+targets | 24 | 10.04 | **4.87** | 8.74 |
+| 2024 | Volume-backed, >= 9 touches+targets, <= 20% TDs | 241 | 12.34 | **12.56** | 12.81 |
+| 2025 | TD-fueled | 28 | 10.05 | **5.79** | 8.70 |
+| 2025 | Volume-backed | 200 | 11.73 | **12.12** | 12.31 |
+
+TD-fueled receivers/backs lose about half their points the next game; volume-backed players hold. The regression alone moves the TD-fueled group's estimate only part of the way (8.7 vs 4.9-5.8 actual), so the explicit TD-dependent penalty exists: fit on 2024 it cuts the flagged group's 2025 error from 5.12 to 4.63 MAE (n = 32) without hurting anyone else (overall MAE 5.308 vs 5.304).
+
+**Floor / median / ceiling.** Multipliers on the player's projection are the 20th / 50th / 80th percentiles of (actual / pre-game estimate), by position and by TD-dependence bucket (low < 25% / mid / high >= 40% of points from TDs). Fit on 2024, checked on 2025: 22% of outcomes fell below the 20th percentile and 17% above the 80th (target 20 / 20; n = 3,814), so the bands are reasonably calibrated, slightly too high on the ceiling side.
+
+Limits: the sample of clearly TD-fueled players is small (n = 24-32 per year), so the penalty is shrunk; red-zone and goal-line touches are shown but not yet a model input; route participation is not in free nflverse data (shown as unavailable); kickers and defenses have no stability profile.

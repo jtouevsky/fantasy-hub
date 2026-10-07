@@ -61,6 +61,8 @@ def tag_for(gap4, dsnap) -> list[str]:
         tags.append("sell high")
     if dsnap == dsnap and dsnap >= ROLE_GROWING:
         tags.append("role growing")
+    if dsnap == dsnap and dsnap <= -ROLE_GROWING:
+        tags.append("role shrinking")
     return tags
 
 

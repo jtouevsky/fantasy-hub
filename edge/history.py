@@ -29,6 +29,11 @@ def _nfl():
     return nfl
 
 
+# expected-stat columns kept from nflverse ff_opportunity (used to split a game's points into volume vs touchdown points)
+XCOLS = ["receptions_exp", "rec_yards_gained_exp", "rush_yards_gained_exp", "pass_yards_gained_exp", "pass_interception_exp",
+         "pass_touchdown_exp", "rush_touchdown_exp", "rec_touchdown_exp", "rec_attempt", "rush_attempt", "rec_air_yards"]
+
+
 def tkey(season, week):
     return season * 100 + week
 
@@ -42,6 +47,7 @@ class Hist:
     inj: pd.DataFrame               # weekly injury report per player
     xfp: pd.DataFrame               # expected fantasy points (ff_opportunity)
     pbp_team: Optional[pd.DataFrame] = None   # team-week pass-rush / protection rates from play-by-play
+    rz: Optional[pd.DataFrame] = None         # player-week red-zone usage from play-by-play: carries / targets inside the 20 and inside the 5
     weights: dict = field(default_factory=dict)
 
     # ---- construction ---------------------------------------------------------
@@ -99,9 +105,27 @@ class Hist:
         ff["week"] = ff["week"].astype(int)
         xfp = ff.rename(columns={"player_id": "gsis", "total_fantasy_points_exp": "xfp", "total_fantasy_points": "xfp_actual"})
         xfp["t"] = tkey(xfp.season, xfp.week)
-        xfp = xfp[["gsis", "season", "week", "t", "xfp", "xfp_actual"]]
+        for c in XCOLS:
+            if c not in xfp.columns:
+                xfp[c] = np.nan
+        xfp = xfp[["gsis", "season", "week", "t", "xfp", "xfp_actual"] + XCOLS]
         pb = cls._pbp_team(nfl, seasons) if with_pbp else None
-        return cls(seasons, weekly, games, sn, inj, xfp, pb, w)
+        rz = cls._pbp_rz(nfl, seasons) if with_pbp else None
+        return cls(seasons, weekly, games, sn, inj, xfp, pb, rz, w)
+
+    @staticmethod
+    def _pbp_rz(nfl, seasons) -> pd.DataFrame:
+        """Per player-week red-zone usage: rush attempts and targets inside the opponent's 20 (rz_) and 5 (gl_) yard lines."""
+        import polars as pl
+        pbp = nfl.load_pbp(seasons).filter((pl.col("season_type") == "REG") & (pl.col("yardline_100") <= 20) & ((pl.col("rush_attempt") == 1) | (pl.col("pass_attempt") == 1)))
+        gl = pl.col("yardline_100") <= 5
+        rush = pbp.filter(pl.col("rush_attempt") == 1).group_by(["season", "week", "rusher_player_id"]).agg(
+            pl.len().alias("rz_carries"), gl.sum().alias("gl_carries")).rename({"rusher_player_id": "gsis"})
+        tgt = pbp.filter((pl.col("pass_attempt") == 1) & pl.col("receiver_player_id").is_not_null()).group_by(["season", "week", "receiver_player_id"]).agg(
+            pl.len().alias("rz_targets"), gl.sum().alias("gl_targets")).rename({"receiver_player_id": "gsis"})
+        out = rush.join(tgt, on=["season", "week", "gsis"], how="full", coalesce=True).to_pandas().fillna(0)
+        out["t"] = tkey(out.season, out.week)
+        return out
 
     @staticmethod
     def _pbp_team(nfl, seasons) -> pd.DataFrame:

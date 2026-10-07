@@ -14,6 +14,7 @@ import agent
 import db
 import demo_data
 import hub as hub_mod
+import optimizer
 import sleeper
 import strategy as strategy_mod
 from config import Config, load_config
@@ -223,8 +224,15 @@ def _load_ctx(force: bool = False) -> Ctx:
         if edge:
             edge_apply.apply_result(all_players, edge)
             warnings += [w for w in edge.warnings[:3]]
+            try:                                    # stability-weighted value: TDs regressed to expected, volume kept; floor/median/ceiling ratios
+                from edge import scoring as edge_scoring, stable as edge_stable
+                h = edge_live.get_hist(snap.year, cfg.db_path)
+                edge_stable.apply_to_players(all_players, edge_stable.live_stable(h, all_players, edge.gsis_of, snap.year, snap.week, edge_scoring.weights(path=cfg.db_path)))
+            except Exception as e:
+                warnings.append(f"Stability model unavailable ({type(e).__name__}); values use raw points per game.")
         scan_status = _maybe_scan(snap, fas, edge, cfg, force)
 
+    optimizer.set_risk_mode(strategy_mod.load(cfg.db_path).risk_mode)
     mkey = (key, (STORE["edge"] or {}).get("key") if not demo else None)
     cm = STORE["model"]
     if cm and cm["key"] == mkey and not force:
