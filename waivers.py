@@ -26,6 +26,8 @@ class FreeAgentRank:
     week_value: float
     trending_adds: int = 0
     breakout: bool = False
+    tags: tuple = ()
+    edge_reason: str = ""
 
 
 @dataclass
@@ -54,7 +56,8 @@ def rank_free_agents(model: ValueModel, fas: list[PlayerInfo], sleeper_index: Op
             sid = sleeper_index.find(p)
             adds = trending.get(sid, 0) if sid else 0
         week = availability(p) if can_start(p) else 0.0
-        out.append(FreeAgentRank(p, model.value(p), week, adds, bool(adds) and 0 <= p.percent_owned < BREAKOUT_MAX_OWNED))
+        out.append(FreeAgentRank(p, model.value(p), week, adds, bool(adds) and 0 <= p.percent_owned < BREAKOUT_MAX_OWNED,
+                                 tuple(t[0] for t in p.tags), max(p.edge, key=lambda a: abs(a['delta']))['reason'] if p.edge else ""))
     return out
 
 
@@ -115,6 +118,16 @@ def suggest_add_drops(snap: LeagueSnapshot, model: ValueModel, fas: list[PlayerI
 
 
 def _reason(fa, drop, me, ros_best_new, week_best_new, weekly) -> str:
+    base = _reason_core(fa, drop, me, ros_best_new, week_best_new, weekly)
+    if fa.edge:                                   # lead with WHY the edge engine likes him (e.g. "RB1 out -> he's next up")
+        top = max(fa.edge, key=lambda a: abs(a["delta"]))
+        return f"Edge: {top['reason']} {base}"
+    if fa.tags:
+        return f"Tagged '{fa.tags[0][0]}'. {base}"
+    return base
+
+
+def _reason_core(fa, drop, me, ros_best_new, week_best_new, weekly) -> str:
     starts_ros = any(p and p.player_id == fa.player_id for p in ros_best_new.values())
     starts_now = any(p and p.player_id == fa.player_id for p in week_best_new.values())
     starter_trouble = [p for p in me if p.position == fa.position and p.lineup_slot not in ("BE", "IR")

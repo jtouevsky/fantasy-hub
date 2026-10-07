@@ -101,6 +101,9 @@ class Swap:
     slot: str
     gain: float
     reason: str
+    from_edge: bool = False        # True when this swap would NOT be recommended using ESPN's raw projections
+    espn_gain: float = 0.0         # what the same swap is worth on ESPN's raw projections
+    edge_note: str = ""
 
     def action(self) -> str:
         out = self.player_out.name if self.player_out else "(empty slot)"
@@ -113,6 +116,8 @@ class LineupPlan:
     optimal: list[tuple[str, Optional[PlayerInfo]]]
     current_total: float
     optimal_total: float
+    espn_current_total: float = 0.0
+    espn_optimal_total: float = 0.0
     swaps: list[Swap] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -149,7 +154,7 @@ def _reason(pin: PlayerInfo, pout: Optional[PlayerInfo]) -> str:
     return f"{pin.name} projects {availability(pin) - availability(pout):.1f} more points than {pout.name}."
 
 
-def plan_lineup(players: list[PlayerInfo], starter_slots: dict[str, int]) -> LineupPlan:
+def _plan_core(players: list[PlayerInfo], starter_slots: dict[str, int]) -> LineupPlan:
     slots = expand_slots(starter_slots)
     best = best_lineup(players, starter_slots)
     optimal = [(slots[i], best[i]) for i in range(len(slots))]
@@ -184,4 +189,26 @@ def plan_lineup(players: list[PlayerInfo], starter_slots: dict[str, int]) -> Lin
     for slot, p in optimal:
         if p is None:
             warnings.append(f"No healthy, non-bye player available for your {slot} slot.")
-    return LineupPlan(current, optimal, round(lineup_value(current), 1), round(lineup_value(optimal), 1), swaps, warnings)
+    return LineupPlan(current, optimal, round(lineup_value(current), 1), round(lineup_value(optimal), 1), swaps=swaps, warnings=warnings)
+
+
+def plan_lineup(players: list[PlayerInfo], starter_slots: dict[str, int]) -> LineupPlan:
+    """Optimal lineup on the (possibly edge-adjusted) projections, with each swap labeled 'from an edge' or not by comparing it
+    to the plan you'd get from ESPN's raw numbers."""
+    plan = _plan_core(players, starter_slots)
+    if not any(p.has_edge for p in players):
+        plan.espn_current_total, plan.espn_optimal_total = plan.current_total, plan.optimal_total
+        return plan
+    import dataclasses
+    raw = [dataclasses.replace(p, week_proj=p.espn_week_proj or p.week_proj, edge=[], edge_ros=0.0) for p in players]
+    base = _plan_core(raw, starter_slots)
+    plan.espn_current_total, plan.espn_optimal_total = base.current_total, base.optimal_total
+    espn_pairs = {(s.player_in.player_id, s.player_out.player_id if s.player_out else None): s.gain for s in base.swaps}
+    for s in plan.swaps:
+        key = (s.player_in.player_id, s.player_out.player_id if s.player_out else None)
+        s.espn_gain = espn_pairs.get(key, 0.0)
+        s.from_edge = key not in espn_pairs or (s.gain - s.espn_gain) >= 1.0 and s.espn_gain < 0.5
+        if s.from_edge:
+            top = max(s.player_in.edge or s.player_out.edge if s.player_out else s.player_in.edge, key=lambda a: abs(a["delta"]), default=None) if (s.player_in.edge or (s.player_out and s.player_out.edge)) else None
+            s.edge_note = (f"Edge: {top['reason']}" if top else "Edge-adjusted projections change this call.")
+    return plan

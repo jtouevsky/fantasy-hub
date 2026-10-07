@@ -23,6 +23,7 @@ MY_LINEUP_WEIGHT = 4.0          # per weekly point my lineup changes (capped bot
 LINEUP_CAP = 4.0
 PREFILTER_WINDOW = 20.0         # only lineup-score packages within +/- this many points of the target
 UNLIKELY_PENALTY = 20.0         # extra penalty when the other manager would probably say no
+TAG_TILT = 2.0                  # score points per buy-low I receive / sell-high I give (and the reverse)
 MIN_MY_SHARE = 40.0             # never suggest trades where I lose badly on value
 
 
@@ -53,6 +54,7 @@ class TradeEval:
     score: float = 0.0
     acceptance: str = ""        # Likely / Maybe / Unlikely
     notes: list[str] = field(default_factory=list)
+    tag_tilt: float = 0.0
 
     @property
     def kind(self) -> str:
@@ -109,6 +111,20 @@ def evaluate_trade(snap: LeagueSnapshot, model: ValueModel, other: TeamInfo,
                         + (f" (your weakest is {drop.name})." if drop else "."))
     if len(give) > len(get):
         ev.notes.append(f"{other.name} must drop a player to fit this trade.")
+    tilt = 0.0
+    for p in get:
+        for tag, _ in p.tags:
+            if tag == "buy low":
+                tilt += TAG_TILT; ev.notes.append(f"{p.name} is tagged BUY LOW (opportunity > production lately), so he's likelier to out-score his recent numbers.")
+            elif tag == "sell high":
+                tilt -= TAG_TILT; ev.notes.append(f"{p.name} is tagged SELL HIGH (production > opportunity lately); expect some fade.")
+    for p in give:
+        for tag, _ in p.tags:
+            if tag == "sell high":
+                tilt += TAG_TILT; ev.notes.append(f"You're giving {p.name}, tagged SELL HIGH - good timing to move him.")
+            elif tag == "buy low":
+                tilt -= TAG_TILT; ev.notes.append(f"You're giving {p.name}, tagged BUY LOW - you may be selling at the bottom.")
+    ev.tag_tilt = tilt
     ev.score = _score(ev)
     return ev
 
@@ -121,6 +137,7 @@ def _score(ev: TradeEval, target: float = 50.0) -> float:
         s -= LOPSIDED_PENALTY * (ev.my_share - LOPSIDED_OVER)
     if ev.acceptance == "Unlikely":
         s -= UNLIKELY_PENALTY
+    s += ev.tag_tilt
     if len(ev.give) > len(ev.get):
         s -= 2.0           # they'd have to drop someone
     elif len(ev.get) > len(ev.give):
