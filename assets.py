@@ -60,9 +60,57 @@ def team(abbr: str, db_path: Optional[str] = None) -> NflTeam:
     return nfl_teams(db_path).get(_norm(abbr), _FALLBACK)
 
 
+LOGO_PX = 160            # one resized variant serves every badge size up to ~80px at 2x
+FIT = 0.72               # the logo's longest side fills this share of the badge's inner diameter
+
+
 def team_logo(abbr: str, db_path: Optional[str] = None) -> str:
+    """Uniform logo file for a team: ESPN's 'scoreboard' variant (consistent art; NYJ's default is a 4096px wordmark),
+    resized by ESPN's image service to LOGO_PX so every badge downloads a few KB."""
     t = team(abbr, db_path)
-    return t.logo or (f"https://a.espncdn.com/i/teamlogos/nfl/500/{t.abbr.lower()}.png" if t.abbr != "NFL" else "")
+    if t.abbr == "NFL":
+        return ""
+    return (f"https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/scoreboard/{t.abbr.lower()}.png&w={LOGO_PX}&h={LOGO_PX}")
+
+
+def _alpha_bounds(url: str) -> Optional[tuple[float, float, float, float]]:
+    """(cx, cy, w, h) of the visible (non-transparent) pixels as fractions of the image, or None."""
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(requests.get(url, timeout=15).content)).convert("RGBA")
+        box = im.getchannel("A").point(lambda v: 255 if v > 24 else 0).getbbox()
+        if not box:
+            return None
+        W, H = im.size
+        return ((box[0] + box[2]) / 2 / W, (box[1] + box[3]) / 2 / H, (box[2] - box[0]) / W, (box[3] - box[1]) / H)
+    except Exception:
+        return None
+
+
+def logo_geometry(db_path: Optional[str] = None) -> dict[str, tuple[float, float, float, float]]:
+    """Visible-pixel bounds per team logo (cached 30 days). Many logo files carry uneven transparent padding, so
+    centering the *box* is not enough; badges shift/scale the image by these numbers to center the *artwork*."""
+    cached = db.cache_get("assets:logo_geom_v2", TEAMS_TTL, db_path)
+    if cached is None:
+        teams = nfl_teams(db_path)
+        with cf.ThreadPoolExecutor(8) as ex:
+            geo = dict(zip(teams, ex.map(lambda ab: _alpha_bounds(team_logo(ab, db_path)), teams)))
+        cached = {k: list(v) for k, v in geo.items() if v}
+        if cached:
+            db.cache_set("assets:logo_geom_v2", cached, db_path)
+    return {k: tuple(v) for k, v in cached.items()}
+
+
+def logo_transform(bounds: Optional[tuple[float, float, float, float]]) -> tuple[float, float, float]:
+    """(dx%, dy%, scale) that centers the artwork in the badge and sizes its longest side to FIT of the inner diameter.
+    With the image filling the badge's content box, scaling by k about the center moves the artwork center from c to
+    0.5 + k*(c-0.5); translating by k*(0.5-c) puts it back exactly at the middle."""
+    if not bounds:
+        return 0.0, 0.0, 1.0
+    cx, cy, w, h = bounds
+    k = FIT / max(w, h, 0.05)
+    return round(100 * k * (0.5 - cx), 2), round(100 * k * (0.5 - cy), 2), round(k, 4)
 
 
 # ---- colors ----------------------------------------------------------------
@@ -123,3 +171,32 @@ def initials(name: str) -> str:
     if len(parts) == 1:
         return parts[0][:2].upper()
     return (parts[0][0] + parts[-1][0]).upper()
+
+
+# ---- fantasy-team logos (ESPN custom uploads need the league cookies, so we fetch them server-side) ----
+def fantasy_logo_src(url: str, cookies: Optional[dict] = None, db_path: Optional[str] = None, px: int = 160) -> Optional[str]:
+    """Image source for a fantasy team's logo. Default ESPN SVG logos are public and used as-is; custom uploads are downloaded once
+    with the league cookies, center-cropped to a square, resized and cached as a small data URI (the cookies never reach the browser)."""
+    if not url:
+        return None
+    if url.endswith(".svg"):
+        return url if verified([url], db_path).get(url) else None
+    key = f"assets:flogo:{hash(url) & 0xffffffff:x}"
+    cached = db.cache_get(key, IMAGE_TTL, db_path)
+    if cached is not None:
+        return cached or None
+    try:
+        import base64, io
+        from PIL import Image
+        r = requests.get(url, cookies=cookies or None, timeout=15)
+        r.raise_for_status()
+        im = Image.open(io.BytesIO(r.content)).convert("RGB")
+        s = min(im.size)
+        im = im.crop(((im.width - s) // 2, (im.height - s) // 2, (im.width + s) // 2, (im.height + s) // 2)).resize((px, px))
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=84)
+        src = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        src = ""                                   # remembered as 'unavailable' so we don't retry on every render
+    db.cache_set(key, src, db_path)
+    return src or None

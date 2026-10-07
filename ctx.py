@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import random
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -18,6 +19,8 @@ from league_client import LeagueClient, get_free_agents, get_player_history, get
 from models import LeagueSnapshot, PlayerInfo, TeamInfo
 from optimizer import LineupPlan, plan_lineup
 from ui import Brand
+from edge import apply as edge_apply, live as edge_live, news_ai
+from edge.engine import EngineResult
 from valuation import ValueModel
 
 FA_POSITIONS = ["QB", "RB", "WR", "TE", "K", "D/ST"]
@@ -44,6 +47,10 @@ class Ctx:
     trending: dict
     warnings: list[str] = field(default_factory=list)
     age: Optional[float] = None            # seconds since the snapshot was fetched
+    edge: Optional[EngineResult] = None    # edge-engine output for this week (None in demo mode / if it failed)
+    events: list = field(default_factory=list)   # AI-parsed news events
+    scan_status: str = ""
+    watchlist: set = field(default_factory=set)
 
     # ---- convenience ----
     @property
@@ -88,7 +95,7 @@ class Ctx:
 
     def agent_tools(self) -> agent.AgentTools:
         return agent.AgentTools(self.snap, self.model, lambda pos, n: self.free_agents(pos, n), self.news_fetch(),
-                                self.index, self.trending, self.cfg.db_path)
+                                self.index, self.trending, self.cfg.db_path, self.edge, self.events)
 
     # ---- cross-page actions (callbacks) ----
     @staticmethod
@@ -123,7 +130,7 @@ def load_ctx(force: bool = False) -> Ctx:
     key = (demo, snap.fetched_at)
     cached = st.session_state.get("_ctx_data")
     if cached and cached["key"] == key and not force:
-        fas, model, index, trending = cached["fas"], cached["model"], cached["index"], cached["trending"]
+        fas, index, trending = cached["fas"], cached["index"], cached["trending"]
     else:
         flexy = {"FLEX", "OP", "RB/WR", "WR/TE"} & set(snap.starter_slots)
         positions = [p for p in FA_POSITIONS if p in snap.starter_slots or (p in ("RB", "WR", "TE") and flexy) or (p == "QB" and "OP" in flexy)]
@@ -135,7 +142,6 @@ def load_ctx(force: bool = False) -> Ctx:
                 fas = [p for pos in positions for p in get_free_agents(_client(), pos, 30, force=force)]
         except Exception as e:
             warnings.append(f"Free-agent data unavailable ({type(e).__name__}). Waiver and value numbers may be less accurate.")
-        model = ValueModel(snap, fas)
         index, trending = None, {}
         if not demo:
             try:
@@ -143,8 +149,99 @@ def load_ctx(force: bool = False) -> Ctx:
                 trending = sleeper.trending_counts(index, "add", cfg.db_path)
             except Exception as e:
                 warnings.append(f"Sleeper data unavailable ({type(e).__name__}); injury cross-checks and trending flags are off.")
-        st.session_state["_ctx_data"] = {"key": key, "fas": fas, "model": model, "index": index, "trending": trending}
+        st.session_state["_ctx_data"] = {"key": key, "fas": fas, "index": index, "trending": trending}
 
-    brand = Brand(cfg.db_path)
-    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age)
+    # ---- edge engine (real leagues only; demo players have no nflverse IDs) -------------------
+    edge, events, scan_status = None, [], ""
+    all_players = [p for t in snap.teams for p in t.roster] + list(fas)
+    if not demo:
+        for p in all_players:
+            if not p.espn_week_proj:
+                p.espn_week_proj = p.week_proj
+        events = news_ai.load_events(db_path=cfg.db_path)
+        try:
+            from edge.engine import current_week_events
+            events = current_week_events(edge_live.get_hist(snap.year, cfg.db_path), snap.year, snap.week, events)
+        except Exception:
+            pass
+        ek = (snap.fetched_at, edge_live.events_signature(cfg.db_path), st.session_state.get("_edge_nonce", 0))
+        ce = st.session_state.get("_edge")
+        if ce and ce["key"] == ek and not force:
+            edge = ce["res"]
+        else:
+            try:
+                w = edge_live.ensure_scoring(_client(), cfg.db_path)
+                if w:
+                    warnings.append(w)
+                if force:
+                    edge_live.recheck_injuries(snap.year, cfg.db_path)
+                edge = edge_live.run_live(snap, fas, index, cfg.db_path, snap.year, snap.week)
+            except Exception as e:
+                warnings.append(f"Edge engine unavailable ({type(e).__name__}: {str(e)[:80]}); showing ESPN projections as is.")
+            st.session_state["_edge"] = {"key": ek, "res": edge}
+        if edge:
+            edge_apply.apply_result(all_players, edge)
+            warnings += [w for w in edge.warnings[:3]]
+        scan_status = _maybe_scan(snap, fas, edge, cfg, force)
+
+    mkey = (key, st.session_state.get("_edge", {}).get("key") if not demo else None)
+    cm = st.session_state.get("_model")
+    if cm and cm["key"] == mkey and not force:
+        model = cm["model"]
+    else:
+        model = ValueModel(snap, fas)
+        st.session_state["_model"] = {"key": mkey, "model": model}
+
+    brand = Brand(cfg.db_path, {"espn_s2": cfg.espn_s2, "SWID": cfg.swid} if not demo and cfg.espn_s2 else None)
+    ctx = Ctx(cfg, demo, snap, brand, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path))
+    brand.watch = ctx.watchlist
     return ctx
+
+
+def _sub_ok() -> bool:
+    if "_sub_ok" not in st.session_state:
+        import agent
+        st.session_state["_sub_ok"] = agent.subscription_available()[0]
+    return st.session_state["_sub_ok"]
+
+
+def _maybe_scan(snap, fas, edge, cfg, force: bool) -> str:
+    """Kick off (at most every 15 min) a background AI read of league news; never blocks the page."""
+    sc = edge_live.SCANNER
+    if sc.running:
+        return f"AI news scan running ({sc.progress or 'working'})"
+    if cfg.chat_backend == "api" or not _sub_ok():
+        return "AI news scan needs the Claude subscription login (see Assistant)."
+    try:
+        starters = [p for p in snap.my_team.roster if p.lineup_slot not in ("BE", "IR")]
+        opps = sorted({p.opponent for p in starters if p.opponent})
+        hist = edge_live.get_hist(snap.year, cfg.db_path)
+        players = edge_live.news_scan_players(snap, fas, edge, hist, opps)
+        gsis_of = edge.gsis_of if edge else {}
+        if edge_live.start_news_scan(players, lambda pid, n: _client().fetch_player_news(pid, n), gsis_of, cfg.db_path):
+            return "AI news scan started"
+    except Exception as e:
+        return f"AI news scan unavailable ({type(e).__name__})"
+    if sc.last_error:
+        return f"Last AI news scan failed: {sc.last_error}"
+    if sc.last_finished:
+        return f"AI news scan finished {int((time.time() - sc.last_finished) / 60)} min ago"
+    return ""
+
+
+def load_watchlist(db_path) -> set:
+    import json
+    try:
+        return set(json.loads(db.setting_get("watchlist", "[]", db_path)))
+    except ValueError:
+        return set()
+
+
+def toggle_watch(pid: int, db_path) -> bool:
+    """Add/remove a player from the watchlist. Returns True if he is now watched."""
+    import json
+    w = load_watchlist(db_path)
+    now = pid not in w
+    (w.add if now else w.discard)(pid)
+    db.setting_set("watchlist", json.dumps(sorted(w)), db_path)
+    return now

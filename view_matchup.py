@@ -17,7 +17,7 @@ def _half(b, p, right: bool, win: bool, started: bool) -> str:
             f'<div style="min-width:0"><div class="nm">{ui.esc(p.name)}</div><div class="sub" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'
             f'{ui.chip(p.position, "pos")}{b.status_chip(p)}{ui.chip("Big game", "good", "star") if big else ""}'
             f'<span class="fresh">{ui.esc(("vs " + p.opponent) if p.opponent else "Bye")} {ui.esc(ui.kick_label(p) if not p.on_bye else "")}</span></div></div>'
-            f'<div class="stat"><b>{p.week_proj:.1f}</b><small class="fresh">proj</small>'
+            f'<div class="stat"><b>{p.week_proj:.1f}</b><small class="fresh">{"ESPN " + format(p.espn_week_proj, ".1f") if p.has_edge else "proj"}</small>'
             + (f'<div class="fresh num">actual {p.week_points:.1f}</div>' if started else "") + '</div></div>')
 
 
@@ -43,6 +43,15 @@ def render(ctx: Ctx) -> None:
          f'{ui.chip(f"{remaining(b_rows)} of theirs yet to play", "", "sports_football")}</div>')
     ctx.brand.prefetch([p for _, p in a_rows + b_rows if p])
 
+    if ctx.edge and ctx.edge.game_env:
+        html(ui.section("Game environment", "Vegas lines + forecast, as of the last refresh"))
+        teams = [t for t in {p.pro_team for _, p in a_rows + b_rows if p and p.position != "D/ST"}]
+        seen = set()
+        for tm in sorted(teams):
+            env = ctx.edge.game_env.get(tm)
+            if env and frozenset((env.team, env.opp)) not in seen:
+                seen.add(frozenset((env.team, env.opp)))
+                html(f'<div style="margin:6px 0">{b.team_badge(env.team, 26)} <b>{ui.esc(env.team)}</b> vs {b.team_badge(env.opp, 26)} <b>{ui.esc(env.opp)}</b> <span class="fresh">{ui.esc(env.kickoff)}</span>{ui.game_env_html(env)}</div>')
     html(ui.section("Starters head to head", "your side left"))
     duels = []
     for (slot, pa), (_, pb) in zip(a_rows, b_rows):

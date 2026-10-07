@@ -60,7 +60,8 @@ class ValueModel:
         return games_remaining(p, self.week, self.final_week)
 
     def ppg(self, p: PlayerInfo) -> float:
-        return blended_ppg(p)
+        """Smoothed per-game points plus the edge engine's rest-of-season adjustment (0 when there is none)."""
+        return blended_ppg(p) + p.edge_ros
 
     def eff_ppg(self, p: PlayerInfo) -> float:
         """Per-game points discounted for expected injury absence (used for lineup comparisons)."""

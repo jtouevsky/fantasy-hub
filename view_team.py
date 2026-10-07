@@ -6,6 +6,7 @@ import streamlit as st
 import ui
 from ctx import Ctx
 from optimizer import availability
+from edge.timing import timing_alerts
 from views_common import ai_button, html, player_list
 
 SLOT_ORDER = ["QB", "RB", "WR", "TE", "RB/WR", "WR/TE", "FLEX", "OP", "D/ST", "K"]
@@ -23,6 +24,17 @@ def render(ctx: Ctx) -> None:
         preview = st.toggle("Preview the optimal lineup", key="team_preview", value=False, disabled=not plan.swaps,
                             help="Shows where each player would sit. Nothing is changed in ESPN." if plan.swaps else "Your lineup is already optimal.")
     html(ui.notice("<b>Fantasy Hub is read-only.</b> Previews show recommendations; make the actual moves in the ESPN app.", "", "lock"))
+    if any(p.has_edge for p in me.roster):
+        diff = plan.optimal_total - plan.espn_optimal_total
+        html(ui.notice(f"<b>Edges on:</b> projections include adjustments for injuries, game environment, weather and opportunity. On ESPN's raw numbers your optimal lineup is "
+                       f"{plan.espn_optimal_total:.1f}; with edges {plan.optimal_total:.1f} ({diff:+.1f}). Open any row's <i>ESPN → Adjusted</i> to see why.", "", "bolt"))
+    alerts = timing_alerts(me.roster, ctx.edge)
+    for a in alerts:
+        html(ui.notice(f"<b>Re-check before lock</b> · {ui.esc(a['message'])}", "bad" if a["severity"] == "act" else "warn", "schedule"))
+    if alerts and st.button("Re-check injuries & re-run edges", key="team_recheck", icon=":material/refresh:", disabled=ctx.demo,
+                            help="Re-pulls injury statuses (NFL report, ESPN, Sleeper) and re-runs the optimizer. Inactives post ~90 minutes before kickoff."):
+        st.session_state["_force_refresh"] = True
+        st.rerun()
 
     rows = plan.optimal if preview else plan.current
     cur_ids = {p.player_id for _, p in plan.current if p}
@@ -55,5 +67,6 @@ def render(ctx: Ctx) -> None:
         for s in plan.swaps:
             html(ui.esc("") + ctx.brand.rec_card(f"{s.player_in.name} in, {s.player_out.name if s.player_out else 'an empty slot'} out", ui.esc(s.reason),
                                                  ic="swap_vert", gain=s.gain, gain_label="proj pts", todo=s.action(),
-                                                 players=[s.player_in] + ([s.player_out] if s.player_out else [])))
+                                                 players=[s.player_in] + ([s.player_out] if s.player_out else []),
+                                                 edge_note=(f"{s.edge_note} (On ESPN's raw numbers this swap is worth {s.espn_gain:+.1f}.)" if s.from_edge else "")))
         ai_button("Explain these changes", "team_explain", "Review my lineup and explain each recommended change simply.", "Lineup review", "fact_check")

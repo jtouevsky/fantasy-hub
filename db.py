@@ -16,6 +16,30 @@ CREATE TABLE IF NOT EXISTS cache (
     fetched_at REAL NOT NULL,
     payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS adjustments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,          -- ESPN player id (what the app uses everywhere)
+    season INTEGER NOT NULL, week INTEGER NOT NULL,
+    type TEXT NOT NULL,                  -- cascade | defense | vegas | weather | regression | schedule | news
+    delta_points REAL NOT NULL,          -- AFTER the per-player cap
+    raw_delta REAL NOT NULL,             -- before the cap
+    reason TEXT NOT NULL, source TEXT NOT NULL, created_at REAL NOT NULL, confidence TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'week'   -- week | ros
+);
+CREATE INDEX IF NOT EXISTS adj_lookup ON adjustments(season, week, player_id);
+CREATE TABLE IF NOT EXISTS id_crosswalk (
+    espn_id INTEGER, sleeper_id TEXT, gsis_id TEXT, pfr_id TEXT, name TEXT, merge_name TEXT, position TEXT, team TEXT
+);
+CREATE INDEX IF NOT EXISTS xw_espn ON id_crosswalk(espn_id);
+CREATE INDEX IF NOT EXISTS xw_gsis ON id_crosswalk(gsis_id);
+CREATE INDEX IF NOT EXISTS xw_sleeper ON id_crosswalk(sleeper_id);
+CREATE TABLE IF NOT EXISTS match_log (
+    created_at REAL NOT NULL, espn_id INTEGER, name TEXT, team TEXT, position TEXT, matched_gsis TEXT, method TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS news_events (
+    news_key TEXT PRIMARY KEY, player_espn_id INTEGER, raw_text TEXT NOT NULL, parsed TEXT, source_url TEXT, published_at TEXT,
+    parsed_at REAL, error TEXT
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS recommendations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

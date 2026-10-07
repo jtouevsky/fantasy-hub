@@ -34,6 +34,13 @@ def render(ctx: Ctx) -> None:
         with c1:
             ai_button("Ask AI why", f"pl_{i}", f"Should I add {s.add.name} and drop {s.drop.name}? Use suggest_waiver_moves and the news.", "Waiver move review")
 
+    watched = [p for pid in sorted(ctx.watchlist) if (p := ctx.everyone().get(pid))]
+    if watched:
+        html(ui.section("Watchlist", f"{len(watched)} saved player{'s' if len(watched) != 1 else ''}"))
+        def where(p):
+            o = ctx.owner_of(p)
+            return " · on your team" if o and o.team_id == me.team_id else f" · on {o.name}" if o else " · free agent"
+        player_list(ctx, "watch", [(p, {"slot": "", "show_actual": False, "note": where(p)}) for p in watched])
     html(ui.section("Browse free agents"))
     f1, f2 = st.columns([3, 2], vertical_alignment="bottom")
     positions = sorted({p.position for p in ctx.fas})
@@ -47,8 +54,9 @@ def render(ctx: Ctx) -> None:
     with g2:
         healthy = st.toggle("Only healthy, not on bye", key="pl_healthy", value=False)
 
+    tag = st.pills("Edge tag", ["Buy low", "Sell high", "Role growing"], key="pl_tag", help="From expected-points vs actual production (backtested: buy-low and sell-high predict the next game; role-growing is informational).") if any(p.tags for p in ctx.fas) else None
     ranks = waivers.rank_free_agents(ctx.model, ctx.fas, ctx.index, ctx.trending)
-    ranks = [r for r in ranks if pos in (None, "All", r.player.position) and (not healthy or can_start(r.player))
+    ranks = [r for r in ranks if pos in (None, "All", r.player.position) and (not healthy or can_start(r.player)) and (not tag or tag.lower() in r.tags)
              and (not q or q.lower() in r.player.name.lower() or q.lower() in r.player.pro_team.lower())]
     key = {"This week": lambda r: r.week_value, "Trending": lambda r: (r.trending_adds, r.ros_value)}.get(sort, lambda r: r.ros_value)
     ranks.sort(key=key, reverse=True)

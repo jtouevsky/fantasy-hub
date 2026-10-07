@@ -5,6 +5,7 @@ import streamlit as st
 
 import ai_runner
 import assets
+from edge import live as edge_live, usage as edge_usage
 import news as news_mod
 import ui
 import waivers
@@ -29,6 +30,8 @@ def _ownership_chip(ctx: Ctx, p) -> str:
 
 def _compare_table(ctx: Ctx, a, b) -> str:
     m = ctx.model
+    ctx.brand.prefetch([a, b])
+    face = lambda p: f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px">{ctx.brand.avatar(p, 52)}<span>{ui.esc(p.name)}</span></div>'
     rows = [("This week (proj)", a.week_proj, b.week_proj, True), ("Points per game", m.ppg(a), m.ppg(b), True),
             ("Rest-of-season value", m.value(a), m.value(b), True), ("Games left", m.games_left(a), m.games_left(b), True)]
     body = ""
@@ -36,7 +39,7 @@ def _compare_table(ctx: Ctx, a, b) -> str:
         bx, by = (" best" if x > y else ""), (" best" if y > x else "")
         body += f'<tr><td>{label}</td><td class="{bx.strip()}">{x:.1f}</td><td class="{by.strip()}">{y:.1f}</td></tr>'
     body += f'<tr><td>Status</td><td>{ui.esc(a.injury_status.title().replace("_", " "))}</td><td>{ui.esc(b.injury_status.title().replace("_", " "))}</td></tr>'
-    return f'<table class="cmp"><tr><th></th><th>{ui.esc(a.name)}</th><th>{ui.esc(b.name)}</th></tr>{body}</table>'
+    return f'<table class="cmp"><tr><th></th><th style="text-transform:none;letter-spacing:0">{face(a)}</th><th style="text-transform:none;letter-spacing:0">{face(b)}</th></tr>{body}</table>'
 
 
 @st.dialog("Player", width="large")
@@ -51,12 +54,41 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
     tc = b.color(p.pro_team)
     st.html(
         f'<div class="hero-player" style="--tc:{tc}">{b.avatar(p, 120)}<div style="min-width:0"><h2>{ui.esc(p.name)}</h2>'
-        f'<div class="fh-ctx" style="margin-top:10px">{ui.chip(p.position, "pos")}<span class="chip plain">{b.logo(p.pro_team, 18)}{ui.esc(team.name)}</span>'
-        f'{b.status_chip(p)}{_ownership_chip(ctx, p)}</div></div></div>'
-        f'<div class="kv"><div><b>{"-" if p.on_bye else f"{p.week_proj:.1f}"}</b><small>Week {snap.week} projection</small></div>'
+        f'<div class="fh-ctx" style="margin-top:10px">{ui.chip(p.position, "pos")}{b.status_chip(p)}{_ownership_chip(ctx, p)}'
+        f'{ui.chip("Watching", "", "star") if p.player_id in ctx.watchlist else ""}</div>'
+        f'<div style="margin-top:10px">{b.team_banner(p.pro_team)}</div></div></div>'
+        f'<div class="kv"><div><b>{"-" if p.on_bye else f"{p.week_proj:.1f}"}</b><small>Week {snap.week} {"ESPN " + format(p.espn_week_proj, ".1f") + " → adjusted" if p.has_edge else "projection"}</small></div>'
         f'<div><b>{m.ppg(p):.1f}</b><small>Points / game (blended)</small></div><div><b>{p.total_points:.1f}</b><small>Season points · {p.games_played} G</small></div>'
         f'<div><b>{m.value(p):.0f}</b><small>Rest-of-season value</small></div></div>')
 
+    gsis = (ctx.edge.gsis_of.get(p.player_id) if ctx.edge else None)
+    if gsis and not ctx.demo:
+        try:
+            cells = edge_usage.usage_cells(edge_usage.usage_summary(edge_live.get_hist(snap.year, ctx.cfg.db_path), gsis, snap.year, snap.year * 100 + snap.week), p.position)
+        except Exception:
+            cells = []
+        if cells:
+            st.html(ui.section("Usage & opportunity", "this season, from play-by-play data") + '<div class="kv">' +
+                    "".join(f'<div><b>{ui.esc(v)}</b><small>{ui.esc(lab)}</small><span class="hint">{ui.esc(hint)}</span></div>' for v, lab, hint in cells) + "</div>")
+    if p.context:
+        st.html(ui.section("Opportunity context", "information only"))
+        st.html(ui.edge_context(p, open_=True))
+    if p.has_edge or p.tags:
+        st.html(ui.section("Edge vs ESPN", "adjustments on top of ESPN's projection"))
+        if p.has_edge:
+            st.html(ui.edge_why(p, open_=True))
+        elif p.tags:
+            st.html(ui.notice("No projection adjustment this week for him (no data, or nothing cleared the noise threshold).", "", "info"))
+        for tg, txt in p.tags:
+            st.html(f'<div class="notice"><span class="chip tag">{ui.icon(ui.TAG_ICON.get(tg, "sell"))}{ui.esc(tg)}</span><div>{ui.esc(txt)}</div></div>')
+        if p.edge_ros:
+            st.html(f'<div class="fresh">{ui.icon("calendar_month")}Rest-of-season edge: {p.edge_ros:+.1f} pts/game (feeds trade and waiver value).</div>')
+    elif ctx.edge is not None and p.position in ("QB", "RB", "WR", "TE") and not p.on_bye:
+        st.html(ui.notice("No edge data for this player this week - ESPN's projection is used as is.", "", "info"))
+    if ctx.edge is not None:
+        env = ctx.edge.game_env.get(p.pro_team)
+        if env:
+            st.html(ui.section("Game environment") + ui.game_env_html(env))
     nxt = f"Week {snap.week}: " + (f"vs {p.opponent}, {ui.kick_label(p)}" if p.opponent else ("bye week" if p.on_bye else "no game info")) + (f" · bye is week {p.bye_week}" if p.bye_week else "")
     st.html(ui.section("Fantasy points by game", "your league's scoring"))
     slot = st.empty()
@@ -102,6 +134,8 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
 
     # ---- news ----
     st.html(ui.section("Latest news"))
+    for ev in [e for e in ctx.events if e.get("player_espn_id") == pid][:2]:
+        st.html(ui.news_event_html(ev))
     fetch = ctx.news_fetch()
     if fetch is None:
         st.html(ui.notice("News isn't available in demo mode.", "", "newspaper"))
@@ -124,7 +158,12 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
     pick = st.selectbox("Compare with", list(others), index=None, key=f"cmp_{pid}", placeholder=f"Another {p.position}", label_visibility="collapsed")
     if pick:
         st.html(_compare_table(ctx, p, others[pick]))
-    c1, c2, _ = st.columns([1.5, 1.7, 2])
+    c1, c2, c3 = st.columns([1.5, 1.7, 1.6])
+    watching = p.player_id in ctx.watchlist
+    if c3.button("Remove from watchlist" if watching else "Add to watchlist", key="sheet_watch", icon=":material/star:" if watching else ":material/star_border:"):
+        from ctx import toggle_watch
+        toggle_watch(p.player_id, ctx.cfg.db_path)
+        st.rerun()
     if c1.button("Explain projection", key="sheet_explain", icon=":material/auto_awesome:"):
         Ctx.ask_ai(f"Explain {p.name}'s week {snap.week} projection and what I should do with him. Use get_player_news and my roster.", f"{p.name}: projection")
         st.rerun()

@@ -51,11 +51,15 @@ def test_every_tool_runs_on_demo_data(tmp_path):
         "get_player_news": {"player": mine.name},
         "log_recommendation": {"kind": "trade", "summary": "x"},
     }
-    assert set(calls) == agent.TOOL_NAMES
+    edge_tools = {"get_edges": {"player_or_team": mine.name}, "get_injury_cascade": {"team": "KC"}, "get_buy_low_sell_high": {}, "get_game_environment": {"game": "KC"}}
+    assert set(calls) | set(edge_tools) == agent.TOOL_NAMES
     for name, args in calls.items():
         out, err = t.call(name, args)
         assert not err, (name, out)
         json.dumps(out)                                  # results must be JSON-serializable
+    for name, args in edge_tools.items():                # demo mode has no edge engine: tools must say so plainly instead of inventing data
+        out, err = t.call(name, args)
+        assert err and "edge engine isn't running" in out["error"], (name, out)
 
 
 def test_team_lookup_by_owner_first_name_and_errors_are_returned_not_raised(tmp_path):
@@ -119,3 +123,15 @@ def test_chat_backend_defaults_to_subscription_and_ignores_placeholder_key(monke
     assert cfg.chat_backend == "subscription" and cfg.anthropic_api_key == ""
     monkeypatch.setenv("CHAT_BACKEND", "api")
     assert config.load_config().chat_backend == "api"
+
+
+def test_answer_written_beside_the_log_call_is_not_lost(tmp_path):
+    t = _tools(tmp_path)
+    client = FakeClaude([
+        ("tool_use", [tx("Start Sutton: ESPN 10.2 -> adjusted 12.0 (opportunity edge, low confidence). Do this in the ESPN app: start him."), tu(1, "log_recommendation", kind="lineup", summary="Start Sutton")]),
+        ("end_turn", [tx("I've logged the recommendation.")]),
+    ])
+    res = agent.run_turn(client, "m", t, [], "who do I start?")
+    assert "ESPN 10.2 -> adjusted 12.0" in res.text and "I've logged" not in res.text
+    assert agent._final_answer(["Real answer here that is long enough to matter.", "Logged it."]) == "Real answer here that is long enough to matter."
+    assert agent._final_answer(["Only message, and it mentions logged but is the whole answer."]) == "Only message, and it mentions logged but is the whole answer."

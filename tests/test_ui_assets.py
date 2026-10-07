@@ -105,3 +105,24 @@ def test_scoreboard_separates_projected_from_actual_and_is_honest():
     pre = b.scoreboard(a, c, 0, 0, 100.0, 90.0, 5, "Pregame")
     live = b.scoreboard(a, c, 41.2, 30.0, 100.0, 90.0, 5, "In progress")
     assert "Actual" not in pre and "Actual 41.2" in live and "not a win-probability model" in pre and "LIVE" not in live.upper().replace("DELIVER", "")
+
+
+def test_no_decorative_color_glows_and_silver_accents_present():
+    for mode in theme.MODES:
+        s = theme.css(mode)
+        for glow in ("rgba(140,150,255", "rgba(95,110,255", "rgba(110,200,225", "rgba(60,170,200", "#6c4bd1", "#b69cff", "#2f5bd0", "#7fa0ff"):
+            assert glow not in s, glow                                   # old blue/lilac/cyan glows and accents are gone
+        assert "--silver-edge" in s and "@keyframes sheen" in s
+    # sheen respects reduced motion and is not an infinite loop
+    s = theme.css("Light")
+    assert "animation: none !important" in s.split("@media (prefers-reduced-motion: reduce)")[-1]
+    assert "infinite" not in s.split("silver accents")[1]
+    # silver differs by theme: darker graphite-silver for light, brighter cool silver for dark
+    assert "#5b6471" in theme.css("Light") and "#f6f8fb" in theme.css("Dark")
+
+
+def test_stylesheet_contains_no_angle_brackets_that_the_html_sanitizer_could_mistake_for_tags():
+    # a literal '<input>' in a comment once made Streamlit's sanitizer drop the ENTIRE <style> block
+    for mode in theme.MODES:
+        body = theme.css(mode)[len("<style>"):-len("</style>")]
+        assert "<" not in body, body[max(body.index("<") - 60, 0): body.index("<") + 40]

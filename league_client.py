@@ -229,6 +229,11 @@ class LeagueClient:
                 out.append(info)
         return out
 
+    def fetch_scoring_items(self) -> list[dict]:
+        """Raw ESPN scoringItems (statId + points) so the edge engine scores players under this league's rules."""
+        raw = self._connect().espn_request.league_get(params={"view": "mSettings"})
+        return raw["settings"]["scoringSettings"]["scoringItems"]
+
     def fetch_player_news(self, espn_player_id: int, limit: int = 5) -> list[dict]:
         league = self._connect()
         try:
@@ -238,7 +243,8 @@ class LeagueClient:
         feed = (data.get("news") or {}).get("feed") or []
         return [
             {"headline": f.get("headline", ""), "story": f.get("story", ""),
-             "published": f.get("published", ""), "source": f.get("type", "ESPN")}
+             "published": f.get("published", ""), "source": f.get("type", "ESPN"),
+             "url": ((f.get("links") or {}).get("web") or (f.get("links") or {}).get("mobile") or {}).get("href", "")}
             for f in feed[:limit]
         ]
 

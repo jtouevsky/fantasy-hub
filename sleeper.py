@@ -37,7 +37,7 @@ def _get(path: str, params: Optional[dict] = None):
 
 def load_players(db_path: Optional[str] = None, fetch: Callable = _get) -> dict[str, dict]:
     """Slim {sleeper_id: {...}} for fantasy-relevant players, cached for 24h."""
-    cached = db.cache_get("sleeper:players", PLAYERS_TTL, db_path)
+    cached = db.cache_get("sleeper:players:v2", PLAYERS_TTL, db_path)
     if cached:
         return cached
     raw = fetch("/players/nfl")
@@ -50,9 +50,10 @@ def load_players(db_path: Optional[str] = None, fetch: Callable = _get) -> dict[
             "name": d.get("full_name") or f"{d.get('first_name', '')} {d.get('last_name', '')}".strip(),
             "pos": "D/ST" if pos == "DEF" else pos, "team": d.get("team") or "",
             "status": d.get("status") or "", "injury_status": d.get("injury_status") or "",
+            "gsis_id": d.get("gsis_id") or "", "depth_chart_order": d.get("depth_chart_order"), "depth_chart_position": d.get("depth_chart_position") or "",
             "injury_body_part": d.get("injury_body_part") or "", "injury_notes": d.get("injury_notes") or "",
         }
-    db.cache_set("sleeper:players", slim, db_path)
+    db.cache_set("sleeper:players:v2", slim, db_path)
     return slim
 
 

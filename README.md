@@ -86,6 +86,43 @@ Everything is **read-only**. Each recommendation ends with what to do in the ESP
 * No league activity feed or waiver-claim deadlines beyond the waiver days ESPN reports.
 * Lineup/waiver/trade changes can't be submitted from here (by design).
 
+## Edge engine: finding what ESPN's projections miss
+
+The edge engine never replaces ESPN. It adds explainable, capped adjustments on top:
+
+```
+adjusted_projection = ESPN projection + sum(adjustments)          each adjustment = player, week, type, points, reason, source, timestamp, confidence
+```
+
+* **Where you see it:** every adjusted number reads **"ESPN 12.4 → Adjusted 14.9"** with an expandable *why* (each adjustment's size, plain-English reason, source, confidence, time, and its uncapped size if the cap bit). Rows, the player sheet, recommendation cards, the lineup optimizer (swaps are labeled when they exist *because of* an edge, with the ESPN-only value shown), the waiver ranker (reason text leads with the edge), and the trade analyzer (rest-of-season edges feed player value; buy-low/sell-high tags tilt the ranking). **More → Edge engine** shows data-source status, each module's verdict, every adjustment, cascades and game environments.
+* **Never fabricated:** if a data source is missing the player gets *no* adjustment and the UI says so. Everything is stored in SQLite (`adjustments` table); total movement per player-week is capped at `EDGE_CAP_PCT` (35%) of `max(ESPN projection, EDGE_CAP_FLOOR)` (floor 6 pts so a 2-point backup can still move; set the floor to 0 for a strict percentage cap).
+
+### Modules and what the backtest says
+
+Backtested on 2024 (tuning) and 2025 (held out) in *your league's scoring*; full tables, ablations and caveats in [`docs/backtest.md`](docs/backtest.md) (regenerate with `python -m edge.backtest`). Baseline = trailing 4-game average, because historical ESPN projections aren't available; **gains over real ESPN projections will be smaller**.
+
+| # | Module | Verdict | What helped / didn't |
+|---|---|---|---|
+| 1 | Injury cascade (vacated opportunity) | **Context only** | Directionally right when a key starter is confirmed out (backups did even better than predicted), but under every filter and threshold we tried it did **not** improve weekly accuracy over recent form, so it is shown as labeled context ("not in projection") and does **not** move projections. See the diagnostics table. |
+| 2 | Opposing defense injuries, own OL injuries, pass rush | **ON** | Nearly all the gain is *your own offensive linemen being out*. Opposing DB / pass-rusher injuries help slightly; the play-by-play pressure matchup added nothing measurable. (OL aren't in snap counts, so listed OL are counted, not "starters".) |
+| 3 | Vegas game environment | **ON (small)** | Small but statistically clear. Free nflverse schedule lines are used unless `ODDS_API_KEY` is set (cached ~12h; ~4 of ~500 monthly credits per day). |
+| 4 | Weather | **ON** | Wind >= 15 mph / extreme cold at outdoor stadiums cut QB/WR/TE scoring; clear gain on the games it touches. Domes and retractable roofs get none. Validated with *actual* wind (a forecast proxy) so live effects will be noisier; precipitation is shown but untested. |
+| 5 | Opportunity vs. production (xFP) | **ON** | The strongest module. **Tags are validated:** "buy low" players beat their baseline by about +2.1 pts the next game, "sell high" players fell short by about 4.0 pts. "Role growing" (snap-share trend) is **not** predictive on its own, so it's informational only. |
+| 6 | AI news scanning | not backtestable | Claude (your subscription) turns ESPN news into structured events (status, games missed, who benefits). It only *extracts*: any status, games-missed count or beneficiary the article text doesn't support is dropped (guardrails + tests), raw text and source link are stored, and items about games already played are ignored. Parsed events update injury state and alerts; they never create point adjustments by themselves. Runs in a background thread. |
+| 7 | Timing | n/a | Flags your starters (and key teammates) with game-time decisions, shows when inactives post (~90 min before kickoff), and **Re-check injuries & re-run edges** re-pulls injury sources and re-runs the optimizer. |
+
+Live strengths are the backtest strengths times a documented haircut (`LIVE_SCALE` in `edge/backtest.py`: Vegas 0.5, defense 0.75, regression 0.5, weather 1.0), because ESPN already absorbs part of these signals. These multipliers are judgment calls, not measurements. The rest-of-season schedule adjustment (remaining opponents' strength, capped at +/-3%) is **not backtested** and is labeled low confidence.
+
+### Data sources
+`nflreadpy` (the maintained successor to `nfl_data_py`; stats, play-by-play, snaps, injuries, schedules/lines, `ff_opportunity`, `ff_playerids`), Sleeper (injuries, depth chart order, trending), ESPN (projections, rosters, news), The Odds API (optional), Open-Meteo (weather, no key). Players are matched by a stored ESPN <-> Sleeper <-> GSIS crosswalk; name+team+position matching is a last resort and is logged.
+
+### Deliberately excluded
+* **QB handedness, height/weight/40-time as weekly adjustments:** low signal, and whatever signal exists is already reflected in usage and results.
+* **Raw "defense vs. position" rankings without shrinkage:** they are mostly noise from small samples and schedule quirks; the signals we kept (injuries, own OL, pressure rates) are specific and tested.
+
+### Agent tools
+`get_edges(player or team, week)`, `get_injury_cascade(team)`, `get_buy_low_sell_high()`, `get_game_environment(game)`. The assistant must cite which adjustments drove its advice (type, size, source, confidence) and say when none applied; it presents cascades as context, not as projection changes.
+
 ## How the player value model works (`valuation.py`)
 
 ```
@@ -178,6 +215,7 @@ league_client.py  the only espn-api importer                 valuation.py  value
 models.py         dataclasses used everywhere                trades.py     evaluator + finder
 config.py / db.py env config, SQLite cache, log, settings    waivers.py    add/drop suggestions
 sleeper.py        injuries + trending                        news.py       news feed + alerts
+edge/             edge engine: history, modules, engine, backtest, news_ai, odds, forecast, timing
 agent.py          Claude tool-use agent                      demo_data.py  fake league for tests/demo
 optimizer.py      best lineup (Hungarian assignment)
 ```
