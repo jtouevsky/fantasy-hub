@@ -89,6 +89,7 @@ class EngineResult:
     game_env: dict[str, GameEnv] = field(default_factory=dict)                    # by NFL team
     cascades: list[dict] = field(default_factory=list)
     injuries: dict[str, InjuryState] = field(default_factory=dict)
+    gsis_of: dict[int, str] = field(default_factory=dict)                          # ESPN id -> GSIS for the slate
     warnings: list[str] = field(default_factory=list)
     data_status: dict[str, str] = field(default_factory=dict)
 
@@ -230,6 +231,7 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
                 gsis_of[p.player_id] = g
             else:
                 res.warnings.append(f"No nflverse ID for {p.name}; no edges for him.")
+    res.gsis_of = gsis_of
     res.data_status["id_crosswalk"] = f"{len(gsis_of)} of {sum(1 for p in players if p.position in SKILL)} skill players matched"
 
     # --- injuries

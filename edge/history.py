@@ -127,3 +127,23 @@ class Hist:
         w["n_prev"] = g.transform(lambda s: s.shift(1).rolling(n, min_periods=1).count())
         w["base"] = g.transform(lambda s: s.shift(1).rolling(n, min_periods=1).mean())
         return w
+
+
+def refresh_injuries(h: Hist) -> int:
+    """Re-pull the NFL injury report (bypassing the on-disk cache) and drop derived caches. Returns rows for the newest season."""
+    nfl = _nfl()
+    try:
+        nfl.clear_cache()
+    except Exception:
+        pass
+    season = max(h.seasons)
+    inj = nfl.load_injuries([season]).to_pandas()
+    inj = inj[inj["game_type"] == "REG"] if "game_type" in inj else inj
+    inj = inj.rename(columns={"gsis_id": "gsis", "position": "pos"})
+    inj["team"] = inj["team"].map(norm_team)
+    inj["t"] = tkey(inj.season, inj.week)
+    h.inj = pd.concat([h.inj[h.inj.season != season], inj], ignore_index=True)
+    for attr in ("_cascade_prep", "_defense_prep"):
+        if hasattr(h, attr):
+            delattr(h, attr)
+    return len(inj)
