@@ -123,7 +123,9 @@ def _reason(fa, drop, me, ros_best_new, week_best_new, weekly) -> str:
         top = max(fa.edge, key=lambda a: abs(a["delta"]))
         return f"Edge: {top['reason']} {base}"
     if fa.tags:
-        return f"Tagged '{fa.tags[0][0]}'. {base}"
+        base = f"Tagged '{fa.tags[0][0]}'. {base}"
+    if fa.context:                                 # e.g. "RB1 on IR, he's next up" - shown, but not counted in his projection
+        return f"Context (not counted in the numbers): {fa.context[0]['text']} {base}"
     return base
 
 

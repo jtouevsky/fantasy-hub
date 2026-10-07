@@ -24,6 +24,7 @@ import pandas as pd
 from edge.history import Hist
 from edge.modules.base import Module, empty_pred
 
+INCREMENTAL = True   # cascade = the INCREMENTAL effect of the absence (without - with), not 'expected share - recent baseline'
 K_LAMBDA = 3.0       # with/without shrinkage
 K_CARRY = 40.0       # pseudo-carries at the position-average rate (efficiency regression)
 K_TGT = 25.0         # pseudo-targets at the position-average rate
@@ -157,11 +158,21 @@ def compute_team(prep: Prep, flows: dict, team: str, tw: int, absent: dict[str, 
             fc, ft = flows.get(xp, {}).get("carries", {}).get(tp, 0.0), flows.get(xp, {}).get("targets", {}).get(tp, 0.0)
             grp_c = sum(v[0] for k, v in base.items() if v[2] == tp and k != x) or 1e-9
             grp_t = sum(v[1] for k, v in base.items() if v[2] == tp and k != x) or 1e-9
-            dep_c = w_cs + xcs * fc * (bcs / grp_c)
-            dep_t = w_ts + xts * ft * (bts / grp_t)
+            alloc_c, alloc_t = xcs * fc * (bcs / grp_c), xts * ft * (bts / grp_t)
             lam = n_wo / (n_wo + K_LAMBDA)
-            exp_c = lam * (float(wo.cs.mean()) if n_wo else dep_c) + (1 - lam) * dep_c
-            exp_t = lam * (float(wo.ts.mean()) if n_wo else dep_t) + (1 - lam) * dep_t
+            if INCREMENTAL:
+                # effect of X's absence only: (share without X - share with X), shrunk toward the depth allocation; then remove the part
+                # of that effect already inside T's last-4-game baseline (games where X was already out). No mean reversion in here.
+                wo_c = (float(wo.cs.mean()) - w_cs) if n_wo else alloc_c
+                wo_t = (float(wo.ts.mean()) - w_ts) if n_wo else alloc_t
+                already = float(np.mean([(x, tt) in prep.absent for tt in t16.tail(4).t])) if len(t16) else 0.0
+                inc_c = (lam * wo_c + (1 - lam) * alloc_c) * (1 - already)
+                inc_t = (lam * wo_t + (1 - lam) * alloc_t) * (1 - already)
+                exp_c, exp_t = bcs + inc_c, bts + inc_t
+            else:
+                dep_c, dep_t = w_cs + alloc_c, w_ts + alloc_t
+                exp_c = lam * (float(wo.cs.mean()) if n_wo else dep_c) + (1 - lam) * dep_c
+                exp_t = lam * (float(wo.ts.mean()) if n_wo else dep_t) + (1 - lam) * dep_t
             dc, dt = p * (exp_c - bcs) * V_c, p * (exp_t - bts) * V_t
             d_c, d_t = d_c + dc, d_t + dt
             n_wo_max = max(n_wo_max, n_wo)
@@ -262,6 +273,7 @@ def estimate_p_absent(h: Hist, seasons: list[int]) -> dict:
 class Cascade(Module):
     name = "Injury cascade (vacated opportunity)"
     kind = "cascade"
+    min_base = 0.0            # the cascade exists to find backups, so it is judged on them too (base < 3 included)
 
     def fit(self, h, rows):
         seasons = sorted(h.weekly.season.unique())

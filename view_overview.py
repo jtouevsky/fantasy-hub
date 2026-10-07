@@ -58,10 +58,10 @@ def render(ctx: Ctx) -> None:
     blocks += [ui.news_event_html(ev) for ev in relevant[:4]]
     if ctx.edge:
         for c in ctx.edge.cascades:
-            for b in c["beneficiaries"]:
-                if b.get("espn_id") in mine and abs(b["weekly_pts"]) >= 1.5:
-                    who = ", ".join(f"{x['name']} ({x['status']})" for x in c["absent"][:2])
-                    blocks.append(ui.notice(f"<b>Edge:</b> {ui.esc(b['reason'])}", "", "bolt"))
+            for ben in c["beneficiaries"]:
+                if ben.get("espn_id") in mine and abs(ben["weekly_pts"]) >= 1.5:
+                    applied = ben.get("applied")
+                    blocks.append(ui.notice(f"<b>{'Edge' if applied else 'Opportunity context (not in projections)'}:</b> {ui.esc(ben['reason'])}", "", "bolt" if applied else "info"))
                     break
     html("".join(blocks) if blocks else ui.notice("Nothing in the news or injury reports changes your lineup right now.", "good", "check_circle"))
     cb1, cb2, _ = st.columns([2.4, 2.2, 3])

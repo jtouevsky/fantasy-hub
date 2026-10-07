@@ -86,6 +86,7 @@ class EngineResult:
     ros: dict[int, float] = field(default_factory=dict)                           # per-game rest-of-season points adjustment
     ros_notes: dict[int, list[str]] = field(default_factory=dict)
     tags: dict[int, list[tuple[str, str]]] = field(default_factory=dict)          # (tag, explanation)
+    context: dict[int, list[dict]] = field(default_factory=dict)                  # informational, NOT in projections (e.g. cascades the backtest did not validate)
     game_env: dict[str, GameEnv] = field(default_factory=dict)                    # by NFL team
     cascades: list[dict] = field(default_factory=list)
     injuries: dict[str, InjuryState] = field(default_factory=dict)
@@ -310,7 +311,8 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
                      "Open-Meteo forecast", "low")
 
     # --- cascade
-    if "cascade" in mods and mods["cascade"].get("alpha", 0) > 0:
+    if "cascade" in mods:
+        casc_applied = mods["cascade"].get("alpha", 0) > 0              # analysis always runs; projections move only if the backtest validated it
         co = mods["cascade"].get("coefs", {})
         prep = prep_for(hist)
         flows, p_abs, scale = co.get("flows", {}), co.get("p_absent", {}), co.get("scale", {})
@@ -332,11 +334,14 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
                 reason, conf = explain(prep, info, words)
                 causes = [absent[c[0]][2] for c in info["causes"] if c[0] in absent]
                 src_txt = "Injury status: " + "; ".join(sorted({x for c in causes for x in c.sources})) + " | nflverse game history (with/without + flow rates)"
-                casc["beneficiaries"].append({"gsis": g, "espn_id": eid, "name": prep.name_of.get(g, ""), "pos": pos, "weekly_pts": round(delta, 2), "reason": reason, "confidence": conf})
-                if eid in meta:
+                casc["beneficiaries"].append({"gsis": g, "espn_id": eid, "name": prep.name_of.get(g, ""), "pos": pos, "weekly_pts": round(delta, 2), "reason": reason,
+                                              "confidence": conf, "applied": casc_applied})
+                if eid is not None and abs(delta) >= MIN_ADJ and not casc_applied:
+                    res.context.setdefault(eid, []).append({"kind": "cascade", "text": reason, "pts": round(delta, 2), "source": src_txt, "confidence": conf})
+                if eid in meta and casc_applied:
                     row = rows[rows.espn_id == eid].iloc[0]
                     d = push(row, "cascade", delta, "cascade", reason, src_txt, conf)
-                    if any(c.long_term for c in causes) and abs(d) >= MIN_ADJ:
+                    if casc_applied and any(c.long_term for c in causes) and abs(d) >= MIN_ADJ:
                         raw.append(Adjustment(eid, season, week, "cascade", round(d * ROS_PERSIST, 3), "Rest of season: " + reason, src_txt, "low", now, None, "ros"))
             res.cascades.append(casc)
 

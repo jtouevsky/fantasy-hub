@@ -57,6 +57,9 @@ def player_sheet(ctx: Ctx, pid: int) -> None:
         f'<div><b>{m.ppg(p):.1f}</b><small>Points / game (blended)</small></div><div><b>{p.total_points:.1f}</b><small>Season points · {p.games_played} G</small></div>'
         f'<div><b>{m.value(p):.0f}</b><small>Rest-of-season value</small></div></div>')
 
+    if p.context:
+        st.html(ui.section("Opportunity context", "information only"))
+        st.html(ui.edge_context(p, open_=True))
     if p.has_edge or p.tags:
         st.html(ui.section("Edge vs ESPN", "adjustments on top of ESPN's projection"))
         if p.has_edge:

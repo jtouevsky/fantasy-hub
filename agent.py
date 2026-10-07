@@ -184,6 +184,7 @@ class AgentTools:
                 "adjustments": [{"type": a["type"], "label": EDGE_LABEL.get(a["type"], a["type"]), "points": _r(a["delta"]), "uncapped_points": _r(a.get("raw", a["delta"])),
                                  "reason": a["reason"], "source": a["source"], "confidence": a["confidence"]} for a in sorted(p.edge, key=lambda a: -abs(a["delta"]))],
                 "tags": [{"tag": t[0], "explanation": t[1]} for t in p.tags], "rest_of_season_edge_points_per_game": _r(p.edge_ros, 2),
+                "context_not_in_projection": [{"kind": c["kind"], "text": c["text"], "estimated_points": c["pts"], "confidence": c.get("confidence", "low")} for c in p.context],
                 "note": "" if p.edge else "No adjustment: no edge data cleared the noise threshold, or data was missing. ESPN's number is used as is."}
 
     def get_edges(self, player_or_team: str, week: Optional[int] = None) -> dict:
@@ -221,7 +222,8 @@ class AgentTools:
         if not c:
             return {"nfl_team": abbr, "cascade": None, "note": f"No skill-position absences are creating an opportunity shift for {abbr} this week (or the data wasn't available)."}
         return {"nfl_team": abbr, "absent": c["absent"], "beneficiaries": sorted(c["beneficiaries"], key=lambda b: -abs(b["weekly_pts"]))[:8],
-                "note": "weekly_pts = estimated change in that player's fantasy points from the shifted opportunity (already scaled by the backtest calibration)."}
+                "note": "weekly_pts = estimated change in that player's fantasy points if usage shifts as history suggests. IMPORTANT: this is context, not a validated adjustment - "
+                        "the backtest found the share-transfer estimate does not improve weekly accuracy over recent form, so it is NOT included in projections. Say so when you use it."}
 
     def get_buy_low_sell_high(self) -> dict:
         """Players tagged buy-low / sell-high (expected points vs actual production, last 4 games) across my roster, other teams and free agents."""
@@ -337,7 +339,7 @@ Rules you must follow:
 4. For trade requests: call find_trades (or evaluate_trade for a specific deal) and present the best 1-3 options. For each, say who is given/received, the value split, how each team's lineup changes, and why the other manager might accept. If the user names a split like 60/40, use it as target_split (60 = in their favor). Mention if a trade needs a drop or a waiver pickup. If none are good, say so honestly.
 5. You are READ-ONLY. You cannot make moves. End every recommendation with a line starting "Do this in the ESPN app:" saying exactly what to tap/propose.
 6. Call log_recommendation once for each concrete recommendation you make (trade, lineup change, waiver move).
-7. EDGES: projections you see may be "adjusted" = ESPN's number plus edge-engine adjustments (injury cascades, game environment, weather, opposing-defense/OL injuries, opportunity-vs-production tags). When a recommendation depends on an adjustment, call get_edges and CITE it: give ESPN's number, the adjusted number, which adjustment drove it, its size, its source and confidence. If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link when you use one. buy-low/sell-high tags were validated in a backtest; "role growing" was not.
+7. EDGES: projections you see may be "adjusted" = ESPN's number plus edge-engine adjustments (injury cascades, game environment, weather, opposing-defense/OL injuries, opportunity-vs-production tags). When a recommendation depends on an adjustment, call get_edges and CITE it: give ESPN's number, the adjusted number, which adjustment drove it, its size, its source and confidence. If a tool says there is no adjustment or data was missing, say so; never claim an edge a tool did not return. News statuses marked AI-extracted come from article text and may be wrong; cite the source link when you use one. injury-cascade estimates are context only (backtest: no accuracy gain) - never present them as part of a projection; buy-low/sell-high tags were validated in a backtest; "role growing" was not.
 8. Be concise. Lead with the answer, then the reasoning. Flag uncertainty (questionable injuries, trending news)."""
 
 

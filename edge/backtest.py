@@ -98,6 +98,8 @@ def choose_alpha(mod: Module, h: Hist, E: pd.DataFrame) -> float:
 
 
 def evaluate(mod_cls, h: Hist, E: pd.DataFrame, key: str, settings: EdgeSettings) -> ModuleReport:
+    if mod_cls.min_base != 3.0:                      # modules that declare a different population are judged on it
+        E = eval_frame(h, [2024, 2025], min_base=mod_cls.min_base)
     alpha = choose_alpha(mod_cls(), h, E)
     tr24 = E[E.season == 2024]
     m = mod_cls().fit(h, tr24)
@@ -199,6 +201,77 @@ def tag_validation(h: Hist, E: pd.DataFrame) -> list[tuple[str, int, float, floa
     return out
 
 
+def cascade_diagnostics(h: Hist) -> dict:
+    """Why the injury cascade ships as CONTEXT, not a projection change: the core case, conviction filters and size deadbands."""
+    import itertools
+    from edge.modules import cascade as C
+    E0 = eval_frame(h, [2024, 2025], min_base=0.0)
+    prep = C.prep_for(h)
+    saved = (C.INCREMENTAL, C.MIN_X_SHARE, C.p_for)
+    out: dict = {}
+    try:
+        C.INCREMENTAL = True
+        m = C.Cascade()
+        m.coefs = {"flows": C.estimate_flows(h, [2022, 2023]), "p_absent": C.estimate_p_absent(h, [2022, 2023]), "scale": {k: 1.0 for k in C.SHARE_POS}}
+        P = m.predict(h, E0)
+        E0 = E0.assign(d=P.delta, res=E0.pts - E0.base)
+        core = []
+        for (team, t), g in E0.groupby(["team", "t"]):
+            outs = [x for x, st, pr in prep.inj_by_game.get((team, t), []) if st == "Out" and (x, t) not in prep.played and prep.pos_of.get(x) in C.SHARE_POS]
+            key = []
+            for x in outs:
+                xr = prep.by_team[team]
+                xr = xr[(xr.gsis == x) & (xr.t < t)].tail(4)
+                if len(xr) >= 2 and (xr.cs.mean() >= 0.30 or xr.ts.mean() >= 0.15):
+                    key.append(x)
+            if key:
+                core.append(g)
+        core = pd.concat(core) if core else E0.iloc[0:0]
+        rows = []
+        for pos in C.SHARE_POS:
+            c = core[(core.pos == pos) & (core.d.abs() >= 0.5)]
+            if len(c) > 20:
+                rows.append((pos, len(c), float(c.d.mean()), float(c.res.mean()), float((c.d * c.res).sum() / (c.d ** 2).sum()), float(np.corrcoef(c.d, c.res)[0, 1])))
+        bk = core[(core.base < 6) & (core.d >= 1.0)]
+        out["core"] = rows
+        out["backups"] = (len(bk), float(bk.d.mean()) if len(bk) else float("nan"), float(bk.res.mean()) if len(bk) else float("nan"))
+        orig_p = C.p_for
+        variants = []
+        for ms, mp in itertools.product([0.08, 0.15, 0.25], [0.0, 0.9]):
+            C.MIN_X_SHARE, C.p_for = ms, (lambda p, st, pr="", _mp=mp: (orig_p(p, st, pr) if orig_p(p, st, pr) >= _mp else 0.0))
+            tr = E0[(E0.season == 2024) & (E0.week <= 10)]
+            va = E0[(E0.season == 2024) & (E0.week >= 11)]
+            te = E0[E0.season == 2025]
+            mm = C.Cascade().fit(h, tr)
+            pv = mm.predict(h, va)
+            mv = pv.delta.abs() >= 0.25
+            gv = float((np.abs(va.pts - va.base) - np.abs(va.pts - va.base - pv.delta))[mv].mean()) if mv.any() else float("nan")
+            m2 = C.Cascade().fit(h, E0[E0.season == 2024])
+            pt = m2.predict(h, te)
+            mt = (pt.delta.abs() >= 0.25).to_numpy()
+            g, lo, hi = paired_ci(np.abs(te.pts - te.base).to_numpy()[mt], np.abs(te.pts - te.base - pt.delta).to_numpy()[mt]) if mt.any() else (float("nan"),) * 3
+            variants.append((ms, mp, int(mv.sum()), gv, int(mt.sum()), g, lo, hi))
+        out["variants"] = variants
+        C.MIN_X_SHARE, C.p_for = saved[1], saved[2]
+        mm = C.Cascade()
+        mm.coefs = {"flows": C.estimate_flows(h, [2022, 2023]), "p_absent": C.estimate_p_absent(h, [2022, 2023]), "scale": {}}
+        r24, r25 = mm._raw(h, E0[E0.season == 2024]).delta, mm._raw(h, E0[E0.season == 2025]).delta
+        y24, y25 = (E0[E0.season == 2024].pts - E0[E0.season == 2024].base), (E0[E0.season == 2025].pts - E0[E0.season == 2025].base)
+        dead = []
+        for T in (0.5, 1.0, 2.0, 3.0, 4.0):
+            a, bsel = r24.abs() >= T, r25.abs() >= T
+            d, y = r24[a].to_numpy(), y24[a].to_numpy()
+            slope = float(np.clip((d @ y) / (d @ d + 25.0), 0, 1.0)) if a.sum() >= 30 else 0.0
+            d5, y5 = r25[bsel].to_numpy(), y25[bsel].to_numpy()
+            if bsel.sum() >= 10:
+                g, lo, hi = paired_ci(np.abs(y5), np.abs(y5 - slope * d5))
+                dead.append((T, int(a.sum()), slope, float((np.abs(y) - np.abs(y - slope * d)).mean()) if a.sum() else float("nan"), int(bsel.sum()), g, lo, hi))
+        out["deadbands"] = dead
+    finally:
+        C.INCREMENTAL, C.MIN_X_SHARE, C.p_for = saved
+    return out
+
+
 def module_registry() -> dict[str, type[Module]]:
     from edge.modules.vegas import Vegas
     from edge.modules.weather import Weather
@@ -213,7 +286,7 @@ def module_registry() -> dict[str, type[Module]]:
     return reg
 
 
-def render(reports: list[ModuleReport], comb: dict, E: pd.DataFrame, settings: EdgeSettings, wts: dict, started: float, abl: dict, tags: list) -> str:
+def render(reports: list[ModuleReport], comb: dict, E: pd.DataFrame, settings: EdgeSettings, wts: dict, started: float, abl: dict, tags: list, casc: Optional[dict] = None) -> str:
     n24, n25 = int((E.season == 2024).sum()), int((E.season == 2025).sum())
     L = ["# Edge engine backtest", "",
          f"_Generated {time.strftime('%Y-%m-%d %H:%M')} by `python -m edge.backtest` in {time.time() - started:.0f}s._", "",
@@ -246,6 +319,21 @@ def render(reports: list[ModuleReport], comb: dict, E: pd.DataFrame, settings: E
         L += [f"**{key.title()}**", "", "| Signal alone | MAE | Gain vs baseline (95% CI) |", "|---|---|---|"]
         L += [f"| {lab} | {m:.3f} | {g:+.4f} ({lo:+.4f} to {hi:+.4f}) |" for lab, m, g, lo, hi in rows]
         L.append("")
+    if casc:
+        L += ["## Injury cascade diagnostics (why it ships as context, not a projection change)", "",
+              "The cascade estimates how a confirmed-out player's carries/targets are redistributed (with/without history shrunk toward position-flow rates). "
+              "It points the right way in its core case but did **not** improve weekly accuracy over a player's recent form under any filter we tried, so it is shown as context and is **not** added to projections.", "",
+              "**Core case**: teammates of a confirmed-Out starter (>=30% of carries or >=15% of targets), unscaled estimate vs. what happened (2024-25):", "",
+              "| Position | Rows | Mean predicted | Mean actual vs baseline | Slope | Corr |", "|---|---|---|---|---|---|"]
+        L += [f"| {p} | {n} | {mp:+.2f} | {ma:+.2f} | {s:.2f} | {c:.2f} |" for p, n, mp, ma, s, c in casc["core"]]
+        n, mp, ma = casc["backups"]
+        L += ["", f"True backups (baseline < 6, predicted >= +1): {n} rows, predicted {mp:+.2f}, actual {ma:+.2f} vs baseline.", "",
+              "**Conviction filters** (min share of the absent player, min probability he's out): chosen on 2024, checked on 2025:", "",
+              "| Min share | Min p(out) | 2024 validation (n, gain) | 2025 hold-out (n, gain, 95% CI) |", "|---|---|---|---|"]
+        L += [f"| {ms} | {mp_} | {nv}, {gv:+.3f} | {nt}, {g:+.3f} ({lo:+.3f} to {hi:+.3f}) |" for ms, mp_, nv, gv, nt, g, lo, hi in casc["variants"]]
+        L += ["", "**Size deadbands** (only apply estimates >= T points; scale fit on 2024):", "", "| T | 2024 rows | fitted scale | 2024 gain | 2025 rows | 2025 gain (95% CI) |", "|---|---|---|---|---|---|"]
+        L += [f"| {T} | {a} | {s:.2f} | {g24:+.3f} | {nb} | {g:+.3f} ({lo:+.3f} to {hi:+.3f}) |" for T, a, s, g24, nb, g, lo, hi in casc["deadbands"]]
+        L += [""]
     L += ["## Do the trade/waiver tags predict the next game? (2025)", "",
           "Mean of (actual - baseline) in the *following* game for players carrying each tag. Positive = they out-scored their baseline.", "",
           "| Tag | Player-games | Mean next-game residual (95% CI) |", "|---|---|---|"]
@@ -299,10 +387,12 @@ def main() -> None:
     params["summary"] = {"mae_base": round(comb["mae_base"], 3), "mae_adj": round(comb["mae_adj"], 3), "gain_lo": round(comb["lo"], 3), "gain_hi": round(comb["hi"], 3), "n": comb["n"]}
     params.pop("summary_pending", None)
     abl, tags = ablations(h, E), tag_validation(h, E)
+    print("  cascade diagnostics ...")
+    casc = cascade_diagnostics(h)
     print(f"combined: {comb['mae_base']:.3f} -> {comb['mae_adj']:.3f} ({comb['gain']:+.4f})")
     os.makedirs("docs", exist_ok=True)
     with open("docs/backtest.md", "w", encoding="utf-8") as f:
-        f.write(render(reports, comb, E, settings, wts, t0, abl, tags))
+        f.write(render(reports, comb, E, settings, wts, t0, abl, tags, casc))
     save_params(params)
     print("wrote docs/backtest.md and edge/params.json")
 

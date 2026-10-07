@@ -37,6 +37,7 @@ class PlayerInfo:
     edge: list = field(default_factory=list)       # this week's adjustments: [{type, delta, reason, source, confidence, at}]
     edge_ros: float = 0.0              # per-game rest-of-season adjustment (points)
     tags: list = field(default_factory=list)       # [(tag, explanation)] e.g. ("buy low", "...")
+    context: list = field(default_factory=list)    # informational notes NOT counted in the projection, e.g. an injury cascade [{kind, text, pts}]
 
     @property
     def edge_total(self) -> float:

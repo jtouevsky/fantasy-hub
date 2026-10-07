@@ -8,7 +8,7 @@
   },
   "modules": {
     "cascade": {
-      "alpha": 0.5,
+      "alpha": 0.0,
       "coefs": {
         "flows": {
           "RB": {
@@ -57,12 +57,12 @@
           "Questionable|limited": 0.393
         },
         "scale": {
-          "RB": 0.46,
-          "TE": 0.597,
-          "WR": 0.315
+          "RB": 0.552,
+          "TE": 0.679,
+          "WR": 0.346
         }
       },
-      "decision": "ON"
+      "decision": "OFF"
     },
     "defense": {
       "alpha": 1.0,
@@ -177,9 +177,9 @@
     "cap_pct": 0.35
   },
   "summary": {
-    "gain_hi": 0.332,
-    "gain_lo": 0.204,
-    "mae_adj": 5.362,
+    "gain_hi": 0.321,
+    "gain_lo": 0.197,
+    "mae_adj": 5.372,
     "mae_base": 5.63,
     "n": 3690
   }

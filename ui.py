@@ -94,6 +94,16 @@ def edge_why(p: PlayerInfo, open_: bool = False) -> str:
             f'<ul>{items}</ul><div class="fine">Adjustments are added to ESPN\'s projection and capped per player. Missing data means no adjustment.</div></details>')
 
 
+def edge_context(p: PlayerInfo, open_: bool = False) -> str:
+    """Informational notes (e.g. an injury cascade) that are deliberately NOT part of the projection."""
+    if not p.context:
+        return ""
+    items = "".join(f'<li><b class="num {"up" if c["pts"] > 0 else "dn"}">{c["pts"]:+.1f}</b> <span class="et">{esc(EDGE_LABEL.get(c["kind"], c["kind"]))} (context)</span>'
+                    f'<div>{esc(c["text"])}</div><small>Source: {esc(c.get("source", ""))} · {esc(c.get("confidence", "low"))} confidence</small></li>' for c in p.context)
+    return (f'<details class="why ctx"{" open" if open_ else ""}><summary>{icon("info")}Opportunity context<span class="chev">not in projection</span></summary><ul>{items}</ul>'
+            f'<div class="fine">Shown for information. In the backtest this estimate did not improve weekly accuracy over a player\'s recent form, so it does not move the projection.</div></details>')
+
+
 def tag_chips(p: PlayerInfo) -> str:
     return "".join(f'<span class="chip tag" title="{esc(t[1])}">{icon(TAG_ICON.get(t[0], "sell"))}{esc(t[0])}</span>' for t in p.tags)
 
@@ -261,7 +271,7 @@ class Brand:
             f'<div class="row {cls}" role="listitem" style="--tc:{self.color(p.pro_team)}">'
             f'<div class="who">{f"<span class=slot>{esc(slot)}</span>" if slot else ""}{self.avatar(p, 44)}'
             f'<div style="min-width:0"><div class="nm">{esc(p.name)}</div>'
-            f'<div class="sub">{chip(p.position, "pos")}{self.nfl_tag(p.pro_team)}{self.status_chip(p)}{lock_chip}{edge_chip}{tag_chips(p)}{esc(note)}</div>{edge_why(p)}</div></div>'
+            f'<div class="sub">{chip(p.position, "pos")}{self.nfl_tag(p.pro_team)}{self.status_chip(p)}{lock_chip}{edge_chip}{tag_chips(p)}{esc(note)}</div>{edge_why(p)}{edge_context(p)}</div></div>'
             f'<div class="opp">{opp}<small>{esc(kl) if not p.on_bye else ""}</small></div>'
             f'<div class="stat{" edge" if p.has_edge and not p.on_bye else ""}"><b>{proj}</b>{proj_label}</div>{stat2}</div>'
         )

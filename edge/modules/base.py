@@ -15,6 +15,7 @@ from edge.history import Hist
 class Module:
     name = "module"
     kind = "vegas"            # adjustment type recorded in the database
+    min_base = 3.0            # evaluation population: players whose baseline is at least this many points
 
     def __init__(self, coefs: dict | None = None):
         self.coefs: dict = coefs or {}
