@@ -218,12 +218,26 @@ def live_stable(h: Hist, players: list, gsis_of: dict[int, str], season: int, we
     tw = season * 100 + week
     past = tbl[tbl.t < tw]
     by = {g: df for g, df in past.groupby("gsis")}
+    sn = h.snaps[(h.snaps.t < tw) & (h.snaps.offense_pct > 0)].sort_values("t")
+    snaps = {g: df.offense_pct.tail(4).mean() for g, df in sn.groupby("gsis")}
+    rz = getattr(h, "rz", None)
+    rzg = {}
+    if rz is not None and len(rz):
+        r = rz[rz.t < tw]
+        rzg = {g: df for g, df in r.groupby("gsis")}
     out = {}
     for p in players:
         g = gsis_of.get(p.player_id)
         if g in by and p.position in POS:
             prof = player_stable(by[g], p.position, params)
             if prof:
+                prof["snap_pct"] = round(float(snaps[g]), 3) if g in snaps else None
+                if g in rzg:
+                    last = by[g].tail(params.get("window", WINDOW))
+                    rr = rzg[g][rzg[g].t.isin(last.t)]
+                    n = max(len(last), 1)
+                    prof["rz_touch_pg"] = round(float((rr.rz_carries.sum() + rr.rz_targets.sum()) / n), 2)
+                    prof["gl_touch_pg"] = round(float((rr.gl_carries.sum() + rr.gl_targets.sum()) / n), 2)
                 out[p.player_id] = prof
     return out
 

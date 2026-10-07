@@ -71,6 +71,11 @@ class AgentTools:
             row["injury_outlook"] = s.timeline(p).note
         if p.has_edge or p.tags:
             row.update({"espn_projection": _r(p.espn_week_proj), "edge_adjustment": _r(p.edge_total), "tags": [t[0] for t in p.tags]})
+        if p.stable:
+            st = p.stable
+            row["stability"] = {"stable_ppg": st["ppg"], "raw_ppg": st["raw_ppg"], "td_share_of_points": st["td_share"], "touches_plus_targets_per_game": st["touches_pg"],
+                                "snap_pct": st.get("snap_pct"), "tds_per_game": st["td_act_pg"], "expected_tds_per_game": st["td_exp_pg"], "td_dependent": st["dependent"],
+                                "volume_backed": st["volume_backed"], "this_week_floor_median_ceiling": [round(p.week_proj * x, 1) for x in st["r"]]}
         return row
 
     def _team_row(self, t) -> dict:
@@ -406,7 +411,7 @@ Starting slots: {', '.join(f'{n}x {s}' for s, n in snap.starter_slots.items())};
 Rules you must follow:
 1. NEVER state a stat, projection, value, record, or injury status that did not come from a tool result in this conversation. Cite the tool output you rely on.
 2. ADD/DROP and STREAMING: call find_moves (or evaluate_move for a specific idea) and recommend ONLY what it returns, in its order. You do no valuation of your own: never assemble a move from get_free_agents, never quote a "value" of 0.0, never mention bye weeks unless it is this week's, never suggest a position the strategy caps or a player added within the protection window. If find_moves says no_move_needed, answer "No move needed" with its one-line reason; that is a good answer.
-3. Format for moves: at most 3, ranked. Each: Add X / Drop Y; this-week gain; rest-of-season gain; ONE line of reason; confidence (high/medium/low). Mark speculative ones as such. For streaming, say "keep your current D/ST" when the tool says swap=false.
+3. Format for moves: at most 3, ranked. Each: Add X / Drop Y; this-week gain; rest-of-season gain; ONE line of reason; confidence (high/medium/low); and the EVIDENCE the tool returned (opportunity: touches+targets per game and snap share; TD share of his points; stability-weighted vs raw points per game; floor/median/ceiling; which rules he passed). Players are valued on STABILITY-weighted points (touchdowns regressed toward what their opportunity predicts), so never praise a player for touchdown-driven points: if the tool says td_dependent, say he is a risk. Mark speculative or unverified ones as such. For streaming, say "keep your current D/ST" when the tool says swap=false.
 4. TRADES: call find_trades (whole league by default; pass the user's words as `request`) or evaluate_trade. Always answer TWO separate questions and never blend them: (a) should the user offer it (their value and lineup, week by week) and (b) would the other manager accept (market value, need, situation, history; use the label likely / coin flip / unlikely and the listed reasons; never invent percentages). Include the offer ladder (Open/Fair/Walk away), the risk, and say which constraints you parsed so they can correct them. If none are good, say so.
 5. After any negotiation outcome the user reports, call log_negotiation. Use get_manager_profile before judging how a specific manager will respond.
 6. You are READ-ONLY. You cannot make moves or send messages (draft_trade_pitch only drafts). End every recommendation with a line starting "Do this in the ESPN app:".

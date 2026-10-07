@@ -241,13 +241,13 @@ def _load_ctx(force: bool = False) -> Ctx:
         model = ValueModel(snap, fas)
         STORE["model"] = {"key": mkey, "model": model}
 
-    hub = _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force)
+    hub = _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force, events)
 
     ctx = Ctx(cfg, demo, snap, model, fas, index, trending, warnings, age, edge, events, scan_status, load_watchlist(cfg.db_path), hub=hub)
     return ctx
 
 
-def _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force) -> hub_mod.Hub:
+def _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force, events=()) -> hub_mod.Hub:
     """The v2 engines (strategy, season model, market, trade world, move engine), rebuilt when data or strategy changes."""
     strat = strategy_mod.load(cfg.db_path)
     from dataclasses import asdict
@@ -276,7 +276,7 @@ def _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force) -> hub_
                 dst_next = dst_mod.live_estimates(h, seasons, snap.year, snap.week + 1)
             except Exception as e:
                 warnings.append(f"D/ST matchup model unavailable ({type(e).__name__}); streaming uses ESPN's D/ST projection only.")
-    hub = hub_mod.build(snap, model, fas, cfg.db_path, signals, activity, dst, dst_next, strat)
+    hub = hub_mod.build(snap, model, fas, cfg.db_path, signals, activity, dst, dst_next, strat, hub_mod.news_reasons(events, edge, [p for t in snap.teams for p in t.roster] + list(fas)))
     STORE["hub"] = {"key": hk, "hub": hub}
     return hub
 

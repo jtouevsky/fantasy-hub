@@ -117,3 +117,64 @@ def test_a_real_upgrade_is_found_with_a_short_reason_and_valid_drop():
     assert top and top[0].ok and top[0].gain_ros > 5 and top[0].drop is not None
     assert "0.0" not in top[0].reason and len(top[0].reason) < 330
     assert top[0].drop.lineup_slot != "IR"
+
+
+def stab(ppg, touches, snap, td_share=0.15, dep=False, vol=False, raw=None):
+    return {"ppg": ppg, "g": 8, "raw_ppg": raw if raw is not None else ppg, "touches_pg": touches, "snap_pct": snap, "td_share": td_share, "td_act_pg": 0.9, "td_exp_pg": 0.4,
+            "targets_pg": touches, "carries_pg": 0.0, "dependent": dep, "volume_backed": vol, "r": [0.4, 0.9, 1.5], "rz_touch_pg": 1.0}
+
+
+def test_td_fluke_with_low_opportunity_is_not_recommended_even_off_a_big_week():
+    fluke = mk(7100, "WR", 9.0, proj=17.0, team="NYJ", gp=8)
+    fluke.stable = stab(7.0, 3.5, 0.35, td_share=0.55, dep=True, raw=14.0)
+    snap, fas, eng = build(fas_extra=[fluke])
+    bench = min((p for p in snap.my_team.roster if p.position == "WR" and p.lineup_slot == "BE"), key=lambda p: p.total_points)
+    m = eng.evaluate_move(fluke, bench)
+    assert not m.ok and any("opportunity" in b.lower() or "td-dependent" in b.lower() or "doesn't beat" in b for b in m.blocked)
+    assert all(x.add.player_id != 7100 for x in eng.find_moves().moves)
+
+
+def test_high_volume_receiver_with_no_tds_passes_the_gate_and_shows_evidence():
+    vol = mk(7101, "WR", 15.5, team="NYJ", gp=8)
+    vol.stable = stab(15.5, 11.0, 0.88, td_share=0.0, vol=True, raw=12.0)
+    snap, fas, eng = build(fas_extra=[vol])
+    ms = eng.find_moves()
+    top = [m for m in ms.moves if m.add.player_id == 7101]
+    assert top and top[0].ok and top[0].evidence["opportunity"]["touches_pg"] == 11.0
+    rules = " ".join(top[0].evidence["rules"])
+    assert "Real opportunity" in rules and "Stability-weighted value" in rules
+    assert top[0].evidence["distribution"]["floor"] < top[0].evidence["distribution"]["ceiling"]
+    assert top[0].confidence in ("medium", "high")
+
+
+def test_fluke_loses_to_volume_when_both_are_available():
+    fluke = mk(7102, "WR", 9.0, proj=17.0, team="NYJ", gp=8)
+    fluke.stable = stab(7.0, 3.5, 0.35, td_share=0.55, dep=True, raw=14.0)
+    vol = mk(7103, "WR", 12.0, team="NYJ", gp=8)
+    vol.stable = stab(15.0, 10.0, 0.85, vol=True, raw=12.0)
+    snap, fas, eng = build(fas_extra=[fluke, vol])
+    adds = [m.add.player_id for m in eng.find_moves().moves]
+    assert 7103 in adds and 7102 not in adds
+
+
+def test_low_opportunity_is_allowed_only_with_a_specific_sourced_reason():
+    backup = mk(7104, "RB", 8.0, team="NYJ", gp=8)
+    backup.stable = stab(13.0, 3.0, 0.30)                      # value is fine, opportunity is not (yet)
+    snap, fas, eng = build(fas_extra=[backup])
+    drop = min((p for p in snap.my_team.roster if p.position == "RB" and p.lineup_slot == "BE"), key=lambda p: p.total_points)
+    assert not eng.evaluate_move(backup, drop).ok
+    snap, fas, eng2 = build(fas_extra=[backup])
+    eng2.news_reasons = {7104: "injury cascade: RB1 is out for the season and he is next up (+6 pts)"}
+    drop = min((p for p in snap.my_team.roster if p.position == "RB" and p.lineup_slot == "BE"), key=lambda p: p.total_points)
+    m = eng2.evaluate_move(backup, drop)
+    assert not any("opportunity" in b.lower() for b in m.blocked)
+    assert "specific reason" in " ".join(m.evidence["rules"]).lower()
+
+
+def test_add_must_beat_the_player_it_replaces_not_replacement_level():
+    meh = mk(7105, "WR", 6.0, team="NYJ", gp=8)
+    meh.stable = stab(6.0, 8.0, 0.8)
+    snap, fas, eng = build(fas_extra=[meh])
+    best_bench = max((p for p in snap.my_team.roster if p.position == "WR" and p.lineup_slot == "BE"), key=lambda p: p.total_points)
+    m = eng.evaluate_move(meh, best_bench)
+    assert not m.ok and any("doesn't beat" in b for b in m.blocked)

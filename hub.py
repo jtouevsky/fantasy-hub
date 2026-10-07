@@ -53,11 +53,33 @@ def apply_return_games(players: list[PlayerInfo], edge_res) -> int:
     return n
 
 
+def news_reasons(events: list[dict], edge_res, players: list[PlayerInfo]) -> dict[int, str]:
+    """Specific, sourced reasons a player may have a bigger role than his recent usage shows: an injury cascade to his teammate, or AI-parsed news
+    (depth-chart promotion, role change, a named beneficiary). Only these can justify adding a low-opportunity player."""
+    out: dict[int, str] = {}
+    byname = {p.name.lower(): p for p in players}
+    if edge_res is not None:
+        for c in edge_res.cascades:
+            for b in c["beneficiaries"]:
+                if b.get("espn_id") is not None and b.get("applied") and b["weekly_pts"] >= 1.5:
+                    out[b["espn_id"]] = f"injury cascade: {b['reason']}"
+    for ev in events or []:
+        pid = ev.get("player_espn_id")
+        if pid is not None and ev.get("event_type") in ("depth_chart", "role_change") and ev.get("status") in (None, "active"):
+            out.setdefault(pid, f"news: {ev.get('summary', '')[:140]}")
+        for name in ev.get("beneficiaries") or []:
+            p = byname.get(str(name).lower())
+            if p is not None:
+                out.setdefault(p.player_id, f"news names him as picking up work: {ev.get('summary', '')[:120]}")
+    return out
+
+
 def build(snap: LeagueSnapshot, model: ValueModel, fas: list[PlayerInfo], db_path: Optional[str] = None, market_signals: Optional[dict] = None,
-          activity: Optional[list[dict]] = None, dst: Optional[dict] = None, dst_next: Optional[dict] = None, strat: Optional[Strategy] = None) -> Hub:
+          activity: Optional[list[dict]] = None, dst: Optional[dict] = None, dst_next: Optional[dict] = None, strat: Optional[Strategy] = None,
+          reasons: Optional[dict] = None) -> Hub:
     strat = strat or strategy_mod.load(db_path)
     activity = list(activity or [])
     apply_activity(snap, activity)
     world = trading.make_world(snap, list(fas), model, strat, market_signals or {}, activity, db_path)
-    eng = MoveEngine(snap, world.season, strat, list(fas), activity, dst=dst, dst_next=dst_next)
+    eng = MoveEngine(snap, world.season, strat, list(fas), activity, dst=dst, dst_next=dst_next, news_reasons=reasons)
     return Hub(strat, world.season, world, eng)
