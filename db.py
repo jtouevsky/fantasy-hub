@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS cache (
     fetched_at REAL NOT NULL,
     payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS recommendations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at REAL NOT NULL,
@@ -98,3 +99,14 @@ def list_recommendations(limit: int = 200, path: Optional[str] = None) -> list[d
 def set_outcome(rec_id: int, outcome: str, path: Optional[str] = None) -> None:
     with connect(path) as c:
         c.execute("UPDATE recommendations SET outcome=? WHERE id=?", (outcome, rec_id))
+
+
+def setting_get(key: str, default: str = "", path: Optional[str] = None) -> str:
+    with connect(path) as c:
+        row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def setting_set(key: str, value: str, path: Optional[str] = None) -> None:
+    with connect(path) as c:
+        c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))

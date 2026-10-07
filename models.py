@@ -30,6 +30,8 @@ class PlayerInfo:
     bye_week: int = 0                  # NFL bye week number (0 = unknown)
     opponent: str = ""
     owner_team_id: Optional[int] = None
+    game_time: str = ""               # ISO local kickoff time for this week's game ("" = bye/unknown)
+    weekly_points: dict[str, float] = field(default_factory=dict)   # {week: actual points} for completed weeks
 
     @property
     def actual_ppg(self) -> float:
@@ -70,6 +72,8 @@ class TeamInfo:
     playoff_pct: float = 0.0
     waiver_rank: int = 0
     roster: list[PlayerInfo] = field(default_factory=list)
+    logo: str = ""                    # fantasy team logo URL from ESPN
+    faab_spent: float = 0.0
 
     @property
     def record(self) -> str:
@@ -125,6 +129,8 @@ class LeagueSnapshot:
     bench_slots: int = 0
     ir_slots: int = 0
     scoring_notes: dict[str, float] = field(default_factory=dict)   # e.g. {"reception": 1.0}
+    faab_budget: int = 0              # 0 = league does not use FAAB
+    waiver_days: list[str] = field(default_factory=list)
     teams: list[TeamInfo] = field(default_factory=list)
     matchups: list[MatchupInfo] = field(default_factory=list)
     fetched_at: float = 0.0

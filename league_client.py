@@ -58,6 +58,8 @@ def _player_to_info(p, owner_team_id: Optional[int], bye_by_team: dict[str, int]
         percent_owned=float(getattr(p, "percent_owned", -1) or -1),
         bye_week=bye_by_team.get(p.proTeam, 0),
         owner_team_id=owner_team_id,
+        weekly_points={str(w): float(v["points"]) for w, v in p.stats.items()
+                       if isinstance(w, int) and w > 0 and v.get("points") is not None and v.get("breakdown")},
     )
 
 
@@ -69,6 +71,8 @@ def _overlay_week(info: PlayerInfo, box) -> None:
     info.opponent = "" if box.pro_opponent == "None" else box.pro_opponent
     info.lineup_slot = _slot(box.slot_position) or info.lineup_slot
     info.injury_status = _norm_status(box.injuryStatus)
+    gd = getattr(box, "game_date", None)
+    info.game_time = gd.isoformat(timespec="minutes") if gd and not box.on_bye_week else ""
 
 
 class LeagueClient:
@@ -172,7 +176,8 @@ class LeagueClient:
                 wins=t.wins, losses=t.losses, ties=t.ties,
                 points_for=float(t.points_for), points_against=float(t.points_against),
                 standing=int(t.standing or 0), playoff_pct=float(t.playoff_pct or 0),
-                waiver_rank=int(t.waiver_rank or 0),
+                waiver_rank=int(t.waiver_rank or 0), logo=t.logo_url or "",
+                faab_spent=float(getattr(t, "acquisition_budget_spent", 0) or 0),
                 roster=[_player_to_info(p, t.team_id, byes) for p in t.roster],
             ))
         by_id = {t.team_id: t for t in teams}
@@ -207,6 +212,8 @@ class LeagueClient:
             team_count=int(league.settings.team_count), my_team_id=self.cfg.team_id,
             starter_slots=starters, bench_slots=bench, ir_slots=ir,
             scoring_notes=self._scoring_notes(league), teams=teams, matchups=matchups,
+            faab_budget=int(league.settings.acquisition_budget or 0) if league.settings.faab else 0,
+            waiver_days=list(league.settings.waiver_process_days or []),
             fetched_at=time.time(),
         )
 
@@ -234,6 +241,58 @@ class LeagueClient:
              "published": f.get("published", ""), "source": f.get("type", "ESPN")}
             for f in feed[:limit]
         ]
+
+
+# ---- full fantasy-score history under THIS league's scoring rules --------------
+def points_from_raw(raw: dict, scoring_items: list[dict]) -> float:
+    """Fallback when ESPN gives raw stats but no applied score: sum(stat value x league points per stat).
+    `raw` maps stat id (str) -> value; `scoring_items` are ESPN's league scoringItems."""
+    total = 0.0
+    for item in scoring_items:
+        val = raw.get(str(item["statId"]))
+        if val:
+            total += float(val) * float(item.get("points", 0) or 0)
+    return round(total, 1)
+
+
+def _history_from_card(card: dict, scoring_items: list[dict]) -> list[dict]:
+    out = []
+    for st in card["players"][0]["player"].get("stats", []):
+        if st.get("statSourceId") != 0 or st.get("statSplitTypeId") != 1 or not st.get("scoringPeriodId"):
+            continue                                           # weekly actuals only (not projections / season totals)
+        applied = st.get("appliedTotal")
+        computed = applied is None and bool(st.get("stats"))
+        pts = points_from_raw(st.get("stats", {}), scoring_items) if computed else round(float(applied or 0), 1)
+        out.append({"season": int(st["seasonId"]), "week": int(st["scoringPeriodId"]), "points": pts,
+                    "source": "computed" if computed else "espn"})
+    return sorted(out, key=lambda r: (r["season"], r["week"]))
+
+
+def _fetch_history(self, player_id: int) -> list[dict]:
+    league = self._connect()
+    if not hasattr(self, "_scoring_items"):
+        raw = league.espn_request.league_get(params={"view": "mSettings"})
+        self._scoring_items = raw["settings"]["scoringSettings"].get("scoringItems", [])
+    card = league.espn_request.get_player_card([int(player_id)], league.finalScoringPeriod)
+    return _history_from_card(card, self._scoring_items)
+
+
+LeagueClient.fetch_player_history = _fetch_history
+
+
+def get_player_history(client: LeagueClient, player_id: int, force: bool = False) -> list[dict]:
+    """[{season, week, points, source}] oldest->newest, cached 6h. Empty list on failure (UI shows an honest state)."""
+    key = f"history:{client.cfg.league_id}:{client.cfg.year}:{player_id}"
+    if not force:
+        cached = db.cache_get(key, 6 * 3600, client.cfg.db_path)
+        if cached is not None:
+            return cached
+    try:
+        hist = client.fetch_player_history(player_id)
+    except Exception:
+        return []
+    db.cache_set(key, hist, client.cfg.db_path)
+    return hist
 
 
 # ---- cached access (what the app calls) -----------------------------------
