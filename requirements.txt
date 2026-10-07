@@ -1,0 +1,7 @@
+espn-api>=1.0.0
+streamlit>=1.40
+anthropic>=1.0
+requests>=2.31
+python-dotenv>=1.0
+pandas>=2.0
+pytest>=8.0
