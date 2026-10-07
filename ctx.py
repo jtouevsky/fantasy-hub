@@ -4,12 +4,11 @@ from __future__ import annotations
 import json
 import os
 import random
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
-
-import streamlit as st
 
 import agent
 import db
@@ -29,13 +28,35 @@ from valuation import ValueModel
 FA_POSITIONS = ["QB", "RB", "WR", "TE", "K", "D/ST"]
 
 
-@st.cache_resource
+_CLIENT: Optional[LeagueClient] = None
+_LOCK = threading.RLock()
+# process-wide caches (this is a single-user local app): everything expensive is computed once per data refresh, never per navigation
+STORE: dict = {"demo": False, "nonce": 0, "ctx_data": None, "edge": None, "model": None, "hub": None, "sub_ok": None, "ctx": None}
+
+
 def _client() -> LeagueClient:
-    return LeagueClient(load_config())
+    global _CLIENT
+    with _LOCK:
+        if _CLIENT is None:
+            _CLIENT = LeagueClient(load_config())
+        return _CLIENT
+
+
+def reset_client() -> None:
+    global _CLIENT
+    with _LOCK:
+        _CLIENT = None
 
 
 def using_demo() -> bool:
-    return bool(st.session_state.get("demo")) or os.getenv("DEMO_MODE") == "1"
+    return bool(STORE["demo"]) or os.getenv("DEMO_MODE") == "1"
+
+
+def set_demo(on: bool) -> None:
+    with _LOCK:
+        STORE["demo"] = bool(on)
+        for k in ("ctx_data", "edge", "model", "hub", "ctx"):
+            STORE[k] = None
 
 
 @dataclass
@@ -55,6 +76,13 @@ class Ctx:
     scan_status: str = ""
     watchlist: set = field(default_factory=set)
     hub: Optional[hub_mod.Hub] = None      # v2 engines: strategy, season model, market, trade world, move engine
+    _memo: dict = field(default_factory=dict, repr=False)
+
+    def memo(self, key, fn):
+        """Compute-once cache scoped to this context (a new context after Refresh/strategy change empties it), so heavy results are never recomputed on navigation."""
+        if key not in self._memo:
+            self._memo[key] = fn()
+        return self._memo[key]
 
     # ---- convenience ----
     @property
@@ -67,10 +95,9 @@ class Ctx:
         return self.snap.team(m.opponent_of(self.me.team_id)) if m else None
 
     def plan(self) -> LineupPlan:
-        key = ("plan", self.snap.fetched_at)
-        if st.session_state.get("_plan_key") != key:
-            st.session_state["_plan"], st.session_state["_plan_key"] = plan_lineup(self.me.roster, self.snap.starter_slots), key
-        return st.session_state["_plan"]
+        if getattr(self, "_plan", None) is None:
+            self._plan = plan_lineup(self.me.roster, self.snap.starter_slots)
+        return self._plan
 
     def everyone(self) -> dict[int, PlayerInfo]:
         d = {p.player_id: p for p in self.fas}
@@ -101,22 +128,34 @@ class Ctx:
         return agent.AgentTools(self.snap, self.model, lambda pos, n: self.free_agents(pos, n), self.news_fetch(),
                                 self.index, self.trending, self.cfg.db_path, self.edge, self.events, hub=self.hub)
 
-    # ---- cross-page actions (callbacks) ----
-    @staticmethod
-    def open_player(pid: int) -> None:
-        st.session_state["open_player"] = pid
-
-    @staticmethod
-    def ask_ai(prompt: str, title: str = "AI review") -> None:
-        st.session_state["ai_sheet"] = {"prompt": prompt, "title": title}
-
-    @staticmethod
-    def goto(page: str, **state) -> None:
-        st.session_state["page_req"] = page
-        st.session_state.update(state)
-
 
 def load_ctx(force: bool = False) -> Ctx:
+    """Uncached build (tests, refresh). Navigation uses get_ctx(), which returns the process-wide cached one."""
+    with _LOCK:
+        return _load_ctx(force)
+
+
+def get_ctx(force: bool = False) -> Ctx:
+    """The shared context. Rebuilt only on Refresh, when the data TTL expires, or when something (strategy, demo toggle, news scan) invalidates it,
+    so switching tabs never recomputes the value model, edge adjustments or hub."""
+    with _LOCK:
+        c = STORE["ctx"]
+        ttl = load_config().cache_ttl
+        if force or c is None or (time.time() - STORE.get("ctx_at", 0)) > ttl:
+            c = STORE["ctx"] = _load_ctx(force)
+            STORE["ctx_at"] = time.time()
+            STORE["version"] = STORE.get("version", 0) + 1
+        return c
+
+
+def invalidate() -> None:
+    """Drop the cached context (next get_ctx rebuilds from the cached ESPN snapshot; the network is only hit if that cache expired)."""
+    with _LOCK:
+        STORE["ctx"] = None
+        STORE["hub"] = None
+
+
+def _load_ctx(force: bool = False) -> Ctx:
     """Snapshot first (required). Everything else degrades to a warning instead of breaking the page."""
     cfg = load_config()
     demo = using_demo()
@@ -132,7 +171,7 @@ def load_ctx(force: bool = False) -> Ctx:
             warnings.append(client.last_warning)
 
     key = (demo, snap.fetched_at)
-    cached = st.session_state.get("_ctx_data")
+    cached = STORE["ctx_data"]
     if cached and cached["key"] == key and not force:
         fas, index, trending = cached["fas"], cached["index"], cached["trending"]
     else:
@@ -153,7 +192,7 @@ def load_ctx(force: bool = False) -> Ctx:
                 trending = sleeper.trending_counts(index, "add", cfg.db_path)
             except Exception as e:
                 warnings.append(f"Sleeper data unavailable ({type(e).__name__}); injury cross-checks and trending flags are off.")
-        st.session_state["_ctx_data"] = {"key": key, "fas": fas, "index": index, "trending": trending}
+        STORE["ctx_data"] = {"key": key, "fas": fas, "index": index, "trending": trending}
 
     # ---- edge engine (real leagues only; demo players have no nflverse IDs) -------------------
     edge, events, scan_status = None, [], ""
@@ -168,8 +207,8 @@ def load_ctx(force: bool = False) -> Ctx:
             events = current_week_events(edge_live.get_hist(snap.year, cfg.db_path), snap.year, snap.week, events)
         except Exception:
             pass
-        ek = (snap.fetched_at, edge_live.events_signature(cfg.db_path), st.session_state.get("_edge_nonce", 0))
-        ce = st.session_state.get("_edge")
+        ek = (snap.fetched_at, edge_live.events_signature(cfg.db_path), STORE["nonce"])
+        ce = STORE["edge"]
         if ce and ce["key"] == ek and not force:
             edge = ce["res"]
         else:
@@ -182,19 +221,19 @@ def load_ctx(force: bool = False) -> Ctx:
                 edge = edge_live.run_live(snap, fas, index, cfg.db_path, snap.year, snap.week)
             except Exception as e:
                 warnings.append(f"Edge engine unavailable ({type(e).__name__}: {str(e)[:80]}); showing ESPN projections as is.")
-            st.session_state["_edge"] = {"key": ek, "res": edge}
+            STORE["edge"] = {"key": ek, "res": edge}
         if edge:
             edge_apply.apply_result(all_players, edge)
             warnings += [w for w in edge.warnings[:3]]
         scan_status = _maybe_scan(snap, fas, edge, cfg, force)
 
-    mkey = (key, st.session_state.get("_edge", {}).get("key") if not demo else None)
-    cm = st.session_state.get("_model")
+    mkey = (key, (STORE["edge"] or {}).get("key") if not demo else None)
+    cm = STORE["model"]
     if cm and cm["key"] == mkey and not force:
         model = cm["model"]
     else:
         model = ValueModel(snap, fas)
-        st.session_state["_model"] = {"key": mkey, "model": model}
+        STORE["model"] = {"key": mkey, "model": model}
 
     hub = _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force)
 
@@ -209,7 +248,7 @@ def _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force) -> hub_
     strat = strategy_mod.load(cfg.db_path)
     from dataclasses import asdict
     hk = (mkey, json.dumps(asdict(strat), sort_keys=True, default=str))
-    ch = st.session_state.get("_hub")
+    ch = STORE["hub"]
     if ch and ch["key"] == hk and not force:
         return ch["hub"]
     signals, activity, dst, dst_next = {}, [], {}, {}
@@ -234,15 +273,15 @@ def _build_hub(snap, model, fas, edge, cfg, demo, mkey, warnings, force) -> hub_
             except Exception as e:
                 warnings.append(f"D/ST matchup model unavailable ({type(e).__name__}); streaming uses ESPN's D/ST projection only.")
     hub = hub_mod.build(snap, model, fas, cfg.db_path, signals, activity, dst, dst_next, strat)
-    st.session_state["_hub"] = {"key": hk, "hub": hub}
+    STORE["hub"] = {"key": hk, "hub": hub}
     return hub
 
 
 def _sub_ok() -> bool:
-    if "_sub_ok" not in st.session_state:
+    if STORE["sub_ok"] is None:
         import agent
-        st.session_state["_sub_ok"] = agent.subscription_available()[0]
-    return st.session_state["_sub_ok"]
+        STORE["sub_ok"] = agent.subscription_available()[0]
+    return STORE["sub_ok"]
 
 
 def _maybe_scan(snap, fas, edge, cfg, force: bool) -> str:
