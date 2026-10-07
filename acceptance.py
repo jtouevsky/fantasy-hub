@@ -24,7 +24,7 @@ from season import Season
 
 BASE = -0.15
 FAIR_CENTER = 0.47            # their share of market value at which the logit from fairness alone is 0
-FAIR_SCALE = 9.0
+FAIR_SCALE = 14.0            # market fairness is the dominant signal: +-0.1 of market share moves the logit by 1.4
 LIKELY, COIN = 0.5, -0.7
 TAU2 = 1.0                    # prior variance of a manager's tendency offset (league-wide prior: centered on 0)
 CLIP_TENDENCY = 1.5
@@ -153,20 +153,20 @@ def assess(market: Market, season: Season, other: TeamInfo, give: list[PlayerInf
     r = max(recv - drop_cost, 0.01) / (max(recv - drop_cost, 0.01) + sent)
     sigs.append(Signal("market fairness", FAIR_SCALE * (r - FAIR_CENTER),
                        f"by consensus value he gets {100 * r:.0f}% of the combined worth" + (f" (after clearing a roster spot)" if drop_cost else "")))
-    need = max(-1.2, min(1.2, 0.25 * their_delta_ppg))
+    need = max(-0.7, min(0.7, 0.12 * their_delta_ppg))
     sigs.append(Signal("need fit", need, f"their starting lineup changes by {their_delta_ppg:+.1f} pts/week on average" + (", and the player he gives up isn't a starter for him" if their_depth_unused else "")))
     if their_depth_unused:
-        sigs.append(Signal("surplus", 0.4, "he's giving up depth he isn't using"))
+        sigs.append(Signal("surplus", 0.3, "he's giving up depth he isn't using"))
     contender = other.playoff_pct >= 50
     out_of_race = other.playoff_pct < 25 and other.wins + other.losses >= 3
     hurt_in = [p for p in give if season.timeline(p).expected_games_out >= 3]
     if hurt_in:
-        sigs.append(Signal("their situation", -0.6 if contender else 0.5 if out_of_race else 0.0,
+        sigs.append(Signal("their situation", -0.35 if contender else 0.4 if out_of_race else 0.0,
                            f"{hurt_in[0].name} is hurt: " + ("a contender wants help now" if contender else "a team out of the race can afford to wait" if out_of_race else "neutral for a mid-table team")))
     brand = sum(market.row(p).brand for p in give) - sum(market.row(p).brand for p in get)
-    sigs.append(Signal("name value", max(-0.8, min(0.8, 0.015 * brand)), "he's getting " + ("more name value than he's giving" if brand > 0 else "less name value than he's giving")))
+    sigs.append(Signal("name value", max(-0.6, min(0.6, 0.012 * brand)), "he's getting " + ("more name value than he's giving" if brand > 0 else "less name value than he's giving")))
     st = stats.get(other.team_id, {"trades": 0})
-    sigs.append(Signal("trade history", 0.4 if st["trades"] >= 3 else 0.15 if st["trades"] >= 1 else -0.3,
+    sigs.append(Signal("trade history", 0.25 if st["trades"] >= 3 else 0.1 if st["trades"] >= 1 else -0.15,
                        f"{st['trades']} trade{'s' if st['trades'] != 1 else ''} made this season"))
     mine = [n for n in negs if n["team_id"] == other.team_id]
     t = tendency(mine)
