@@ -45,10 +45,14 @@ def test_every_tool_runs_on_demo_data(tmp_path):
     mine, theirs = me.roster[0], t.snap.find_team("Kaden").roster[0]
     calls = {
         "get_league_overview": {}, "get_my_roster": {}, "get_team_roster": {"team_name_or_owner": "Kaden"},
-        "get_free_agents": {"position": "WR", "limit": 3}, "optimize_lineup": {}, "suggest_waiver_moves": {},
+        "get_free_agents": {"position": "WR", "limit": 3}, "optimize_lineup": {}, "find_moves": {},
         "evaluate_trade": {"give": [mine.name], "get": [theirs.name]},
-        "find_trades": {"target_team": "Kaden", "offering": [mine.name], "target_split": 55},
+        "find_trades": {"request": "a receiver at about 55/45", "target_team": "Kaden", "offering": [mine.name], "target_split": 55},
         "get_player_news": {"player": mine.name},
+        "evaluate_move": {"add": t.fetch_free_agents("WR", 30)[0].name},
+        "get_strategy": {}, "get_manager_profile": {"manager": "Kaden"},
+        "draft_trade_pitch": {"give": [mine.name], "get": [theirs.name], "team_name_or_owner": "Kaden"},
+        "log_negotiation": {"manager": "Kaden", "offer": {"give": [mine.name], "get": [theirs.name]}, "response": "rejected", "note": "test"},
         "log_recommendation": {"kind": "trade", "summary": "x"},
     }
     edge_tools = {"get_edges": {"player_or_team": mine.name}, "get_injury_cascade": {"team": "KC"}, "get_buy_low_sell_high": {}, "get_game_environment": {"game": "KC"}}

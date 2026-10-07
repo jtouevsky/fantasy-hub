@@ -439,3 +439,49 @@ def make_world(snap: LeagueSnapshot, fas: list[PlayerInfo], model, strategy: Str
         p.market = market_signals.get(p.player_id, p.market)
     season = Season(snap, model, strategy, fas)
     return TradeWorld(snap, season, Market(season, everyone), strategy, activity, db_path)
+
+
+# ------------------------------------------------------------------------------------------------------------------
+def _pl(p: PlayerInfo, world: TradeWorld) -> dict:
+    s = world.season
+    d = {"name": p.name, "position": p.position, "nfl_team": p.pro_team, "lineup_slot": p.lineup_slot, "injury_status": p.injury_status,
+         "projected_points_this_week": round(p.week_proj, 1), "expected_points_rest_of_season": round(s.raw_ros(p)),
+         "market_value": round(world.market.value(p), 1), "my_value": round(s.par(p), 1)}
+    if p.injury_status in ("INJURY_RESERVE", "OUT", "SUSPENSION"):
+        d["injury_outlook"] = s.timeline(p).note
+    return d
+
+
+def risk_lines(world: TradeWorld, ev: TradeEval) -> list[str]:
+    out = []
+    for p in ev.get:
+        if p.injury_status in ("INJURY_RESERVE", "OUT", "SUSPENSION"):
+            out.append(f"{p.name}: {world.season.timeline(p).note}")
+        if p.games_played and p.games_played < 3:
+            out.append(f"{p.name} has only {p.games_played} games played this year; his production estimate is thin.")
+    if ev.speculative:
+        out.append("Part of the gain rests on my model being more bullish than the consensus; treat it as a hunch.")
+    return out
+
+
+def explain(world: TradeWorld, ev: TradeEval) -> dict:
+    """Plain-language answer to the two separate questions, plus risk and the offer ladder."""
+    a = ev.acceptance
+    me_txt = (f"Over the rest of the season this changes your weekly lineup by {ev.my_avg_week:+.1f} pts on average "
+              f"({ev.my_delta:+.0f} weighted points, playoffs count 1.5x).")
+    mkt_txt = (f"By market value he gets {ev.market_split_theirs:.0f}% of what changes hands. " + ("; ".join(a.reasons[:3]) if a.reasons else ""))
+    return {"should_i_offer": {"verdict": ev.verdict_me_text, "detail": me_txt, "my_value_split": f"{ev.my_split:.0f}/{100 - ev.my_split:.0f}"},
+            "would_they_accept": {"label": a.label, "detail": mkt_txt, "market_value_split_for_them": f"{ev.market_split_theirs:.0f}/{100 - ev.market_split_theirs:.0f}",
+                                  "signals": [{"name": x.name, "effect": round(x.contribution, 2), "why": x.text} for x in a.signals],
+                                  "confirmed_by_manager": a.confirmed},
+            "risk": risk_lines(world, ev)}
+
+
+def describe(world: TradeWorld, ev: TradeEval) -> dict:
+    ex = explain(world, ev)
+    return {"type": ev.kind, "other_team": ev.other.name, "i_give": [_pl(p, world) for p in ev.give], "i_get": [_pl(p, world) for p in ev.get],
+            **ex, "my_lineup_change_per_week": round(ev.my_avg_week, 1), "their_lineup_change_per_week": round(ev.their_avg_week, 1),
+            "week_by_week": [{"week": w, "before": round(b, 1), "after": round(a, 1)} for w, b, a in ev.my_weeks],
+            "must_cut": ev.my_drop.name if ev.my_drop else None, "notes": ev.notes, "speculative": ev.speculative,
+            "offer_ladder": [{"step": st.name, "give": [p.name for p in st.give], "would_they_accept": st.acceptance, "my_lineup_change": round(st.my_delta, 1), "note": st.note} for st in ev.ladder],
+            "espn_action": f"Open {ev.other.name}'s team in the ESPN app and propose this trade."}
