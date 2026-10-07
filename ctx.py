@@ -230,6 +230,11 @@ def _load_ctx(force: bool = False) -> Ctx:
                 edge_stable.apply_to_players(all_players, edge_stable.live_stable(h, all_players, edge.gsis_of, snap.year, snap.week, edge_scoring.weights(path=cfg.db_path)))
             except Exception as e:
                 warnings.append(f"Stability model unavailable ({type(e).__name__}); values use raw points per game.")
+            try:                                    # score earlier recommendations whose weeks have completed
+                import tracking
+                tracking.score(cfg.db_path, edge_live.get_hist(snap.year, cfg.db_path).weekly, snap.year, snap.week)
+            except Exception:
+                pass
         scan_status = _maybe_scan(snap, fas, edge, cfg, force)
 
     optimizer.set_risk_mode(strategy_mod.load(cfg.db_path).risk_mode)

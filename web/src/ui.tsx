@@ -75,8 +75,14 @@ export const FAvatar = memo(function FAvatar({ t, size = 56 }: { t: FTeam; size?
 
 export const NflTag = ({ abbr }: { abbr: string }) => (!abbr || abbr === 'None' ? null : <span className="nflt"><TeamBadge abbr={abbr} size={18} />{abbr}</span>)
 
+const TAG_ICON: Record<string, string> = { 'buy low': 'trending_up', 'sell high': 'trending_down', 'role growing': 'moving', 'role shrinking': 'trending_flat', 'td-dependent': 'casino', 'volume-backed': 'stacked_bar_chart' }
 export const TagChips = ({ p }: { p: Player }) => (
-  <>{p.tags.map(([t, why]) => <Chip key={t} kind="ai" icon={t === 'buy low' ? 'trending_up' : t === 'sell high' ? 'trending_down' : 'moving'} title={why}>{t}</Chip>)}</>
+  <>{p.tags.map(([t, why]) => {
+    const st = p.st
+    const label = t === 'td-dependent' && st ? `TD-dependent · ${Math.round(st.tdShare * 100)}% TDs · ${st.touches.toFixed(1)} t/g`
+      : t === 'volume-backed' && st ? `Volume-backed · ${st.touches.toFixed(1)} t/g` : t
+    return <Chip key={t} kind={t === 'td-dependent' ? 'warn' : t === 'volume-backed' ? 'good' : 'ai'} icon={TAG_ICON[t] || 'sell'} title={why}>{label}</Chip>
+  })}</>
 )
 
 export const StatusChip = ({ p }: { p: Pick<Player, 'onBye' | 'status' | 'statusLabel' | 'out'> }) => {
@@ -171,9 +177,30 @@ export function MoveCard({ m, ask = true }: { m: any; ask?: boolean }) {
         <Chip kind={k} icon={ic}>{m.confidence[0].toUpperCase() + m.confidence.slice(1)} confidence</Chip>
         {m.flags.includes('speculative') && <Chip kind="warn" icon="bolt">Speculative</Chip>}{m.flags.includes('streamer') && <Chip icon="autorenew">Streamer</Chip>}
       </div>
-      <details className="exp"><summary>Why</summary><div>{m.reason}<div className="fresh">{m.action}</div>
+      <details className="exp"><summary>Why</summary><div>{m.reason}<Evidence ev={m.evidence} /><div className="fresh">{m.action}</div>
         {ask && <div className="actions"><button className="btn sm" onClick={() => askAI(`Check this move with evaluate_move: add ${m.add}${m.drop ? `, drop ${m.drop}` : ''}.`, 'Waiver move review')}><Icon n="auto_awesome" /> Ask AI about this</button></div>}</div></details>
     </>
+  )
+}
+
+export function Evidence({ ev }: { ev: any }) {
+  if (!ev || !ev.opportunity) return null
+  const o = ev.opportunity, v = ev.value || {}, d = ev.distribution
+  const f = (x: number | null | undefined, k = 1) => (x == null ? 'n/a' : x.toFixed(k))
+  return (
+    <div className="evid">
+      <div className="evg">
+        <div><b>{f(v.add_stable_ppg)}</b><small>stable ppg{v.add_raw_ppg ? ` (raw ${f(v.add_raw_ppg)})` : ''}</small></div>
+        <div><b>{f(o.touches_pg)}</b><small>touches+targets / game</small></div>
+        <div><b>{o.snap_pct != null ? Math.round(o.snap_pct * 100) + '%' : 'n/a'}</b><small>offensive snaps</small></div>
+        <div><b>{o.td_share != null ? Math.round(o.td_share * 100) + '%' : 'n/a'}</b><small>of points from TDs</small></div>
+        {d && <div><b>{d.floor} / {d.median} / {d.ceiling}</b><small>floor / median / ceiling</small></div>}
+      </div>
+      {v.vs && <div className="fresh">vs {v.vs}: {f(v.vs_stable_ppg)} stable ppg{v.edge != null ? ` (edge ${v.edge >= 0 ? '+' : ''}${f(v.edge)})` : ''}</div>}
+      {o.td_act_pg != null && <div className="fresh">TDs per game: {f(o.td_act_pg, 2)} actual vs {f(o.td_exp_pg, 2)} expected from his opportunities{o.rz_touch_pg != null ? ` · red-zone touches/game ${f(o.rz_touch_pg)}` : ''}</div>}
+      <ul>{(ev.rules || []).map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>
+      {ev.news_reason && <div className="fresh">Sourced reason: {ev.news_reason}</div>}
+    </div>
   )
 }
 

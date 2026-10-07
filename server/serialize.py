@@ -45,6 +45,13 @@ def player(ctx: Ctx, p: PlayerInfo, slot: Optional[str] = None, detail: bool = F
         "bye": p.bye_week or None,
         "img": None if p.position == "D/ST" else {"s": assets.headshot_url(p.player_id, 120), "l": assets.headshot_url(p.player_id, 360)},
     }
+    st = p.stable
+    if st:
+        d["st"] = {"ppg": st["ppg"], "raw": st["raw_ppg"], "tdShare": st["td_share"], "touches": st["touches_pg"], "snap": st.get("snap_pct"), "dep": st["dependent"], "vol": st["volume_backed"],
+                   "fmc": [round(p.week_proj * x, 1) for x in st["r"]]}
+        if detail:
+            d["st"].update({"targets": st["targets_pg"], "carries": st["carries_pg"], "targetShare": st.get("target_share"), "rz": st.get("rz_touch_pg"), "gl": st.get("gl_touch_pg"),
+                            "tdAct": st["td_act_pg"], "tdExp": st["td_exp_pg"], "volPg": st["vol_pg"], "tdPg": st["td_pg"], "xvolPg": st["xvol_pg"], "xtdPg": st["xtd_pg"], "g": st["g"]})
     if detail:
         d["edge"], d["context"], d["edgeRos"] = edge_rows(p), context_rows(p), p.edge_ros
     return d

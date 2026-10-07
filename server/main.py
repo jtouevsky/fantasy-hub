@@ -23,6 +23,7 @@ import db
 import news as news_mod
 import strategy as strategy_mod
 import theme
+import tracking
 import trading
 import fmt as ui
 from config import load_config
@@ -180,6 +181,27 @@ def _blocks(c: cx.Ctx) -> list[dict]:
     return out
 
 
+def track(c: cx.Ctx, ms) -> None:
+    """Record this week's recommended adds and lineup swaps once, so the report card can score them when the games are played."""
+    if c.demo or c.edge is None:
+        return
+    def go():
+        gs = c.edge.gsis_of
+        for m in ms.moves:
+            tracking.record(c.cfg.db_path, c.snap.year, c.snap.week, "add", m.add, m.drop, gs, m.gain_week, m.confidence, m.reason)
+        for s in c.plan().swaps:
+            if s.player_out:
+                tracking.record(c.cfg.db_path, c.snap.year, c.snap.week, "start", s.player_in, s.player_out, gs, s.gain, "", s.reason)
+        return True
+    c.memo("tracked", go)
+
+
+@app.get("/api/report")
+def report_card():
+    c = get()
+    return tracking.report(c.cfg.db_path)
+
+
 @app.get("/api/overview")
 def overview():
     c = get()
@@ -190,6 +212,7 @@ def overview():
     ordered = snap.standings()
     idx = next((i for i, t in enumerate(ordered) if t.team_id == me.team_id), 0)
     ms = c.memo("moves3", lambda: c.hub.moves.find_moves(3))
+    track(c, ms)
     return {
         "scoreboard": S.scoreboard(c), "age": S.age_seconds(c), "ttl": c.cfg.cache_ttl,
         "ready": not plan.swaps and not plan.warnings, "swapCount": len(plan.swaps),
@@ -218,7 +241,7 @@ def team():
     bench = [p for p in me.roster if p.lineup_slot not in ("IR",) and p.player_id not in start_ids]
     ir = [p for p in me.roster if p.lineup_slot == "IR"]
     return {
-        "currentTotal": round(plan.current_total, 1), "optimalTotal": round(plan.optimal_total, 1), "gain": round(plan.gain, 1), "hasSwaps": bool(plan.swaps),
+        "riskMode": __import__("optimizer").risk_mode(), "currentTotal": round(plan.current_total, 1), "optimalTotal": round(plan.optimal_total, 1), "gain": round(plan.gain, 1), "hasSwaps": bool(plan.swaps),
         "edgesOn": any(p.has_edge for p in me.roster), "espnOptimal": round(plan.espn_optimal_total, 1), "slotsTotal": sum(snap.starter_slots.values()),
         "alerts": [{"tone": "bad" if a["severity"] == "act" else "warn", "text": a["message"]} for a in timing_alerts(me.roster, c.edge)],
         "current": rows(plan.current), "optimal": rows(plan.optimal), "movedIn": sorted(opt_ids - cur_ids), "movedOut": sorted(cur_ids - opt_ids),
@@ -271,6 +294,7 @@ def players():
     c = get()
     season = c.hub.season
     ms = c.memo("moves3", lambda: c.hub.moves.find_moves(3))
+    track(c, ms)
     def trend(p):
         sid = c.index.find(p) if c.index else None
         return c.trending.get(sid, 0) if sid else 0

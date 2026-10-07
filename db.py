@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS negotiations (
     response TEXT NOT NULL,              -- accepted | rejected | countered | pending
     note TEXT, model_logit REAL           -- the model's pre-response logit (None if unknown), used for the Bayesian tendency update
 );
+CREATE TABLE IF NOT EXISTS move_tracking (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_ts REAL NOT NULL, season INTEGER NOT NULL, week INTEGER NOT NULL,
+    kind TEXT NOT NULL,                  -- add | start
+    add_id INTEGER NOT NULL, add_name TEXT NOT NULL, add_gsis TEXT, drop_id INTEGER, drop_name TEXT, drop_gsis TEXT, position TEXT,
+    pred_gain REAL, confidence TEXT, summary TEXT,
+    weeks_scored INTEGER DEFAULT 0, add_pts REAL, drop_pts REAL, hit INTEGER,      -- filled in as weeks complete
+    UNIQUE (season, week, kind, add_id, drop_id)
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS recommendations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

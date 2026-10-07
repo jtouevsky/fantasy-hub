@@ -385,7 +385,9 @@ class MoveEngine:
         s = self.season
         streams = [self.stream_pick(pos) for pos in sorted(self.strategy.streaming) if self.snap.starter_slots.get(pos)]
         cands = [p for p in self.fas if p.position in ("QB", "RB", "WR", "TE") and not p.is_out and not p.on_bye]
-        short = sorted(cands, key=lambda p: -(s.raw_ros(p) + s.upside(p)))[:pool // 2] + sorted(cands, key=lambda p: -p.week_proj)[:pool // 2]
+        short = sorted(cands, key=lambda p: -p.week_proj)[:pool // 3]
+        for pos in ("QB", "RB", "WR", "TE"):                                  # every position gets its own shortlist so a crowded position can't hide the others
+            short += sorted((p for p in cands if p.position == pos), key=lambda p: -(s.raw_ros(p) + s.upside(p)))[:max(4, pool // 6)]
         seen, results = set(), []
         for fa in short:
             if fa.player_id in seen:

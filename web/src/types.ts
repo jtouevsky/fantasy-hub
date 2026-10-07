@@ -4,6 +4,7 @@ export interface Player {
   opp: string; kick: string; lock: string; owner: number | null; owned: number; watch: boolean; color: string; tags: [string, string][]; bye: number | null
   img: { s: string; l: string } | null; edge?: any[]; context?: any[]; edgeRos?: number
   ros?: number; key?: number; trend?: number; healthy?: boolean; where?: string; tl?: string | null
+  st?: { ppg: number; raw: number; tdShare: number; touches: number; snap: number | null; dep: boolean; vol: boolean; fmc: [number, number, number] } & Record<string, any>
 }
 export interface FTeam { id: number; name: string; abbrev: string; owner: string; first: string; record: string; standing: number; pf: number; pa: number; playoffPct: number; color: string; logo: string | null; me: boolean }
 export interface NflTeam { abbr: string; name: string; short: string; color: string; logo: string; dx: number; dy: number; k: number }

@@ -24,6 +24,7 @@ const FIELDS: [string, string, number, number, number][] = [
   ['stream_swap_gain', 'Swap only if it gains at least (pts)', 0, 10, 0.5], ['max_qb', 'Max QBs', 1, 4, 1], ['max_te_extra', 'Extra TEs beyond starters', 0, 3, 1], ['max_dst', 'Max D/ST', 1, 3, 1],
   ['recent_days', "Don't churn players added in the last (days)", 0, 21, 1], ['min_gain_week', 'Minimum gain this week (pts)', 0, 10, 0.5], ['min_gain_ros', '...or minimum rest-of-season gain (pts)', 0, 40, 1],
   ['speculative_extra_gain', 'Extra gain needed for one-week spikes (pts)', 0, 10, 0.5], ['playoff_weight', 'Playoff week weight', 1, 3, 0.1],
+  ['min_value_edge', 'Add must beat the player he replaces by (stable ppg)', 0, 10, 0.5], ['min_touches', 'Minimum touches+targets per game for an add', 0, 20, 0.5], ['min_snap_share', 'Or minimum offensive snap share (0-1)', 0, 1, 0.05],
 ]
 
 function Strategy() {
@@ -42,6 +43,7 @@ function Strategy() {
         <label className="toggle"><input type="checkbox" checked={s.stream_k} disabled={!d.hasK} onChange={(e) => set('stream_k', e.target.checked)} /> Stream K {!d.hasK && <span className="fresh">(no kicker slot)</span>}</label></div>
       <Section title="Roster caps, protection and thresholds" />
       <div className="form">{FIELDS.map(([k, label, min, max, step]) => <div className="field" key={k}><label htmlFor={k}>{label}</label><input id={k} type="number" min={min} max={max} step={step} value={s[k]} onChange={(e) => set(k, Number(e.target.value))} /></div>)}
+        <div className="field"><label>Lineup decisions use</label><div className="pills" title="Median is the default. Safe also weights each player's floor, Upside his ceiling, Mean is the plain projection.">{['Median', 'Safe', 'Upside', 'Mean'].map((x) => <button key={x} className={`pill ${s.risk_mode === x ? 'on' : ''}`} onClick={() => set('risk_mode', x)}>{x}</button>)}</div></div>
         <div className="field"><label>Explanations</label><div className="pills">{['Short', 'Beginner'].map((x) => <button key={x} className={`pill ${s.explanation === x ? 'on' : ''}`} onClick={() => set('explanation', x)}>{x}</button>)}</div></div></div>
       <div className="actions"><button className="btn primary" onClick={save}><Icon n="save" /> Save strategy</button></div>
       <div className="ctxrow"><Chip icon="grid_view">Slots: {Object.entries(d.slots).map(([k, n]) => `${n}x ${k}`).join(', ')}</Chip><Chip icon="lock">Caps: {Object.entries(d.caps).map(([k, n]) => `${k} ${n}`).join(', ')}</Chip><Chip icon="autorenew">Streaming: {d.streaming.join(', ') || 'none'}</Chip></div>
@@ -90,12 +92,29 @@ function Log() {
   )
 }
 
+function Report() {
+  const { data: d, isLoading } = useApi<any>('/api/report', { stale: 60_000 })
+  if (isLoading || !d) return <Skel n={3} h={70} />
+  return (
+    <>
+      <Notice icon="fact_check">Every add and lineup swap the app recommends is recorded. A recommendation is a <b>hit</b> when the player it said to add or start scored more fantasy points than the player he replaced, over the games played since (up to 3 weeks), under your league scoring.</Notice>
+      <div className="kpis"><div className="kpi"><b>{d.rate != null ? `${d.rate}%` : '-'}</b><small>Hit rate ({d.hits} of {d.scored} scored)</small></div><div className="kpi"><b>{d.total}</b><small>Recommendations recorded</small></div><div className="kpi"><b>{d.pending}</b><small>Waiting for games</small></div></div>
+      {d.weeks.length > 0 && <><Section title="By week" /><div className="card"><table className="edge-table"><thead><tr><th>Week</th><th>Scored</th><th>Hits</th><th>Hit rate</th></tr></thead><tbody>{d.weeks.map((w: any) => <tr key={w.week}><td>Week {w.week}</td><td className="num">{w.n}</td><td className="num">{w.hits}</td><td className="num">{w.rate}%</td></tr>)}</tbody></table></div></>}
+      <Section title="Every recommendation" aside="newest first" />
+      {d.rows.length === 0 ? <Empty title="Nothing recorded yet" body="Open Overview or Players while connected to your league and the moves shown there are recorded for scoring." icon="fact_check" /> :
+        d.rows.map((r: any) => <div key={r.id} className="neg"><Chip kind={r.hit == null ? '' : r.hit ? 'good' : 'bad'} icon={r.hit == null ? 'hourglass_top' : r.hit ? 'check_circle' : 'cancel'}>{r.hit == null ? 'Waiting' : r.hit ? 'Hit' : 'Miss'}</Chip>
+          <span><b>{r.kind === 'add' ? 'Add' : 'Start'} {r.add_name}</b>{r.drop_name ? ` over ${r.drop_name}` : ''} <span className="fresh">· week {r.week} · {r.confidence || 'lineup'}</span></span>
+          <small>{r.hit == null ? `predicted ${r.pred_gain >= 0 ? '+' : ''}${r.pred_gain}` : `${r.add_pts} vs ${r.drop_pts} pts (${r.diff >= 0 ? '+' : ''}${r.diff})`}</small></div>)}
+    </>
+  )
+}
+
 export default function More({ tab, setTab }: { tab: string; setTab: (t: string) => void }) {
-  const tabs = ['News', 'My strategy', 'Edge engine', 'Recommendation log']
+  const tabs = ['News', 'My strategy', 'Report card', 'Edge engine', 'Recommendation log']
   return (
     <>
       <div className="pills" role="tablist">{tabs.map((t) => <button key={t} className={`pill ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>{t}</button>)}</div>
-      {tab === 'News' ? <News /> : tab === 'My strategy' ? <Strategy /> : tab === 'Edge engine' ? <Edge /> : <Log />}
+      {tab === 'News' ? <News /> : tab === 'My strategy' ? <Strategy /> : tab === 'Report card' ? <Report /> : tab === 'Edge engine' ? <Edge /> : <Log />}
     </>
   )
 }
