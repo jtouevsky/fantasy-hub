@@ -143,6 +143,49 @@ class LeagueSnapshot:
     def matchup_for(self, team_id: int) -> Optional[MatchupInfo]:
         return next((m for m in self.matchups if m.involves(team_id)), None)
 
+    def find_team(self, query: str) -> TeamInfo:
+        """Find a team by owner first name ('Kaden'), owner full/display name, team name or abbreviation.
+        Raises LookupError with a helpful message when nothing / more than one team matches."""
+        q = " ".join(query.lower().split())
+        if not q:
+            raise LookupError("Empty team name.")
+
+        def hits(match) -> list[TeamInfo]:
+            return [t for t in self.teams if match(t)]
+
+        def owner_fields(t: TeamInfo):
+            for o in t.owners:
+                yield from (o.first_name.lower(), f"{o.first_name} {o.last_name}".lower().strip(), o.display_name.lower())
+
+        # exact owner first/full/display name, then exact team name, then looser matches
+        stages = [
+            lambda t: q in set(owner_fields(t)),
+            lambda t: q in (t.name.lower(), t.abbrev.lower()),
+            lambda t: any(f.startswith(q) for f in owner_fields(t)),
+            lambda t: q in t.name.lower() or any(q in f for f in owner_fields(t)),
+        ]
+        for stage in stages:
+            found = hits(stage)
+            if len(found) == 1:
+                return found[0]
+            if len(found) > 1:
+                names = ", ".join(f"{t.name} ({t.owner_label})" for t in found)
+                raise LookupError(f"'{query}' matches several teams: {names}. Be more specific.")
+        avail = ", ".join(f"{t.owners[0].first_name if t.owners else '?'} = {t.name}" for t in self.teams)
+        raise LookupError(f"No team matches '{query}'. Teams: {avail}")
+
+    def find_player(self, query: str, team: Optional["TeamInfo"] = None) -> PlayerInfo:
+        """Find a rostered player by (partial) name, optionally restricted to one team."""
+        q = " ".join(query.lower().replace(".", "").split())
+        pool = team.roster if team else [p for t in self.teams for p in t.roster]
+        norm = lambda p: " ".join(p.name.lower().replace(".", "").split())
+        found = [p for p in pool if norm(p) == q] or [p for p in pool if q in norm(p)]
+        if len(found) == 1:
+            return found[0]
+        if not found:
+            raise LookupError(f"No rostered player matches '{query}'" + (f" on {team.name}." if team else "."))
+        raise LookupError(f"'{query}' matches several players: {', '.join(p.name for p in found)}.")
+
     def standings(self) -> list[TeamInfo]:
         return sorted(self.teams, key=lambda t: (t.standing or 99, -t.wins))
 
