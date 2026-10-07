@@ -53,6 +53,7 @@ class ValueModel:
         self.starters = snap.starter_slots
         self.starters_by_pos = self._count_league_starters()
         self.replacement_ppg = self._replacement_levels(free_agents or [])
+        self._phantoms = self._make_phantoms()
 
     # -- per-player numbers -------------------------------------------------
     def games_left(self, p: PlayerInfo) -> int:
@@ -60,6 +61,10 @@ class ValueModel:
 
     def ppg(self, p: PlayerInfo) -> float:
         return blended_ppg(p)
+
+    def eff_ppg(self, p: PlayerInfo) -> float:
+        """Per-game points discounted for expected injury absence (used for lineup comparisons)."""
+        return self.ppg(p) * ros_availability(p)
 
     def ros_points(self, p: PlayerInfo) -> float:
         return self.ppg(p) * self.games_left(p) * ros_availability(p)
@@ -71,10 +76,14 @@ class ValueModel:
             return 0.0
         return max(0.0, self.ppg(p) - repl) * self.games_left(p) * ros_availability(p)
 
+    def starting_lineup(self, roster: list[PlayerInfo]) -> dict[int, PlayerInfo]:
+        """Best lineup by smoothed, injury-discounted per-game points (byes ignored). Any hole is filled by a
+        phantom replacement-level player (negative id), because you could pick one up free from waivers."""
+        best = best_lineup(list(roster) + self._phantoms, self.starters, value=self.eff_ppg, eligible=lambda p: True)
+        return {p.player_id: p for p in best.values() if p}
+
     def lineup_ppg(self, roster: list[PlayerInfo]) -> float:
-        """Weekly points of a roster's best lineup using smoothed per-game numbers (injuries/byes ignored)."""
-        best = best_lineup(roster, self.starters, value=self.ppg, eligible=lambda p: True)
-        return sum(self.ppg(p) for p in best.values() if p)
+        return sum(self.eff_ppg(p) for p in self.starting_lineup(roster).values())
 
     def lineup_value_ros(self, roster: list[PlayerInfo]) -> float:
         """Total ROS value of the starters in the roster's best lineup (accounts for injuries/byes)."""
@@ -93,6 +102,18 @@ class ValueModel:
             best = best_lineup(t.roster, self.starters, value=self.ppg, eligible=lambda p: True)
             counts.update(p.position for p in best.values() if p)
         return counts
+
+    def _make_phantoms(self) -> list[PlayerInfo]:
+        every = [p for t in self.snap.teams for p in t.roster]
+        out, n_teams = [], max(self.snap.team_count, 1)
+        for i, (pos, repl) in enumerate(self.replacement_ppg.items()):
+            proto = next((p for p in every if p.position == pos), None)
+            if proto is None:
+                continue
+            for k in range(-(-self.starters_by_pos[pos] // n_teams) + 1):   # ceil(starters per team) + 1
+                out.append(PlayerInfo(-(1000 * (i + 1) + k), f"a replacement-level {pos} from waivers", pos,
+                                      eligible_slots=list(proto.eligible_slots), season_proj_ppg=repl))
+        return out
 
     def _replacement_levels(self, fas: list[PlayerInfo]) -> dict[str, float]:
         pool = [p for t in self.snap.teams for p in t.roster] + list(fas)
