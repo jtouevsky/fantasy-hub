@@ -66,3 +66,15 @@ def test_navigation_does_not_recompute(client):
     for p in ("/api/team", "/api/players", "/api/overview", "/api/league"):
         client.get(p)
     assert cx.STORE["ctx"] is c1                                  # same context object: nothing rebuilt while navigating
+
+
+def test_chat_and_oneshot_use_the_shared_runner(client, monkeypatch):
+    import agent
+    import ai_runner
+    fake = agent.TurnResult("Hello **there**", [], [{"tool": "find_moves", "input": {}, "error": False, "result": {"moves": [], "streaming": [], "no_move_needed": True, "no_move_reason": "x"}}], "sess")
+    monkeypatch.setattr(ai_runner, "run", lambda *a, **k: fake)
+    r = client.post("/api/chat", json={"prompt": "hi"}).json()
+    assert [m["role"] for m in r["messages"]] == ["user", "assistant"] and r["messages"][1]["trace"][0]["moves"]["no_move_needed"]
+    assert client.get("/api/chat").json()["messages"]
+    assert client.post("/api/ai", json={"prompt": "x"}).json()["text"] == "Hello **there**"
+    assert client.delete("/api/chat").status_code == 200 and client.get("/api/chat").json()["messages"] == []
