@@ -17,6 +17,7 @@ from models import LeagueSnapshot, PlayerInfo
 from optimizer import availability, plan_lineup
 from valuation import ValueModel
 import sleeper
+import news
 import trades
 import waivers
 
@@ -276,6 +277,51 @@ def render_trades(snap: LeagueSnapshot, model: ValueModel) -> None:
 
 
 # ---------------------------------------------------------------------------
+# News
+# ---------------------------------------------------------------------------
+def render_news(snap: LeagueSnapshot, index) -> None:
+    if using_demo():
+        st.info("Player news comes from ESPN/Sleeper, so it isn't available in demo mode.")
+        return
+    cfg = load_config()
+    client = _client()
+    fetch = lambda pid, n: client.fetch_player_news(pid, n)
+    me = snap.my_team
+    m = snap.matchup_for(me.team_id)
+    opp = snap.team(m.opponent_of(me.team_id)) if m else None
+    teams = [("My team", me)] + ([("Opponent", opp)] if opp else [])
+
+    with st.spinner("Loading player news..."):
+        data = {t.team_id: news.collect_team_news(t, fetch, index, cfg.db_path) for _, t in teams}
+
+    st.markdown("#### Lineup alerts")
+    any_alert = False
+    for label, t in teams:
+        for a in news.lineup_alerts(snap, t, data[t.team_id]):
+            any_alert = True
+            box = {news.ACT: st.error, news.WATCH: st.warning, news.INFO: st.info}[a.severity]
+            who = "" if label == "My team" else f"[{t.name}] "
+            box(f"**{a.severity}** · {who}{a.message}" + (f"  \n_{a.action}_" if a.action and label == "My team" else ""))
+    if not any_alert:
+        st.success("Nothing in the news should change your lineup this week.")
+
+    for label, t in teams:
+        st.markdown(f"#### {label}: {t.name}")
+        for p in sorted(t.roster, key=_slot_key):
+            pn = data[t.team_id][p.player_id]
+            tag = _status_label(p)
+            head = f"{p.name} ({p.position}, {p.pro_team}) · {p.lineup_slot}" + (f" · {tag}" if tag else "")
+            with st.expander(head):
+                if pn.injury_line:
+                    st.caption(f"Sleeper injury: {pn.injury_line}" + (f" - {pn.sleeper['injury_notes']}" if pn.sleeper.get("injury_notes") else ""))
+                if not pn.items:
+                    st.write("No recent ESPN news.")
+                for it in pn.items[:4]:
+                    st.markdown(f"**{it.headline}**  \n{it.story[:400]}{'...' if len(it.story) > 400 else ''}  \n"
+                                f"<sub>{it.source} · {it.published[:10]}</sub>", unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
 # Shell
 # ---------------------------------------------------------------------------
 def render_setup_help(err: str | None = None) -> None:
@@ -326,7 +372,7 @@ def main() -> None:
                + f" · {snap.bench_slots} bench")
 
     fas, model, index, trending = load_context(snap)
-    tab_dash, tab_lineup, tab_waiver, tab_trade = st.tabs(["Dashboard", "Lineup", "Waivers", "Trades"])
+    tab_dash, tab_lineup, tab_waiver, tab_trade, tab_news = st.tabs(["Dashboard", "Lineup", "Waivers", "Trades", "News"])
     with tab_dash:
         render_dashboard(snap)
     with tab_lineup:
@@ -335,6 +381,8 @@ def main() -> None:
         render_waivers(snap, fas, model, index, trending)
     with tab_trade:
         render_trades(snap, model)
+    with tab_news:
+        render_news(snap, index)
 
 
 main()
