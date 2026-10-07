@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 CONFIDENCE = ("low", "med", "high")
-TYPES = ("cascade", "defense", "vegas", "weather", "regression", "trend", "news")
+TYPES = ("cascade", "defense", "vegas", "weather", "regression", "schedule", "news")
 
 
 @dataclass

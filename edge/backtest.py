@@ -33,7 +33,7 @@ SEED = 7
 # ESPN's own projections already absorb part of what these modules see (injury news, usage, schedule), and the backtest baseline
 # (a trailing average) is much cruder than ESPN's. Live strengths are therefore discounted. These are judgment calls, NOT
 # backtest outputs - there are no historical ESPN projections to measure the overlap - and are configurable in params.json.
-LIVE_SCALE = {"vegas": 0.5, "weather": 1.0, "cascade": 0.5, "defense": 0.75, "regression": 0.5}
+LIVE_SCALE = {"vegas": 0.5, "weather": 1.0, "cascade": 0.75, "defense": 0.75, "regression": 0.5}
 
 
 def mae(err) -> float:
@@ -253,7 +253,7 @@ def render(reports: list[ModuleReport], comb: dict, E: pd.DataFrame, settings: E
     L += ["", "## Live strengths (judgment, not measured)", "",
           "ESPN projections already absorb part of each signal and are far better than the trailing-average baseline used here, so live strengths are discounted:", "",
           "| Module | Backtest alpha | Live multiplier | Why |", "|---|---|---|---|"]
-    why = {"vegas": "ESPN projections already reflect game environment", "weather": "ESPN rarely adjusts for wind/cold", "cascade": "ESPN adjusts for confirmed injuries but lags on depth shifts",
+    why = {"vegas": "ESPN projections already reflect game environment", "weather": "ESPN rarely adjusts for wind/cold", "cascade": "ESPN adjusts for confirmed injuries but lags on depth shifts (already shrunk twice: fitted scale x validated alpha)",
            "defense": "mostly OL injuries, which ESPN does not model", "regression": "ESPN's projections already use opportunity (a trailing average does not)"}
     for r in reports:
         L.append(f"| {r.name} | {r.alpha:g} | x{LIVE_SCALE.get(r.key, 1.0):g} | {why.get(r.key, '')} |")

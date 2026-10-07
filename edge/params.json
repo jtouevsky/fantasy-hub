@@ -1,6 +1,6 @@
 {
   "live_scale": {
-    "cascade": 0.5,
+    "cascade": 0.75,
     "defense": 0.75,
     "regression": 0.5,
     "vegas": 0.5,

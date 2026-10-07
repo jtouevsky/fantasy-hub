@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS adjustments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id INTEGER NOT NULL,          -- ESPN player id (what the app uses everywhere)
     season INTEGER NOT NULL, week INTEGER NOT NULL,
-    type TEXT NOT NULL,                  -- cascade | defense | vegas | weather | regression | trend | news
+    type TEXT NOT NULL,                  -- cascade | defense | vegas | weather | regression | schedule | news
     delta_points REAL NOT NULL,          -- AFTER the per-player cap
     raw_delta REAL NOT NULL,             -- before the cap
     reason TEXT NOT NULL, source TEXT NOT NULL, created_at REAL NOT NULL, confidence TEXT NOT NULL,

@@ -32,6 +32,19 @@ class PlayerInfo:
     owner_team_id: Optional[int] = None
     game_time: str = ""               # ISO local kickoff time for this week's game ("" = bye/unknown)
     weekly_points: dict[str, float] = field(default_factory=dict)   # {week: actual points} for completed weeks
+    # --- edge engine (filled in after load; ESPN's own number is always kept in espn_week_proj) ---
+    espn_week_proj: float = 0.0        # ESPN projection before adjustments (0 = no edge applied)
+    edge: list = field(default_factory=list)       # this week's adjustments: [{type, delta, reason, source, confidence, at}]
+    edge_ros: float = 0.0              # per-game rest-of-season adjustment (points)
+    tags: list = field(default_factory=list)       # [(tag, explanation)] e.g. ("buy low", "...")
+
+    @property
+    def edge_total(self) -> float:
+        return round(sum(a["delta"] for a in self.edge), 2)
+
+    @property
+    def has_edge(self) -> bool:
+        return bool(self.edge) and abs(self.edge_total) >= 0.05
 
     @property
     def actual_ppg(self) -> float:

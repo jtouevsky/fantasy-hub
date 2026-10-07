@@ -238,7 +238,8 @@ class LeagueClient:
         feed = (data.get("news") or {}).get("feed") or []
         return [
             {"headline": f.get("headline", ""), "story": f.get("story", ""),
-             "published": f.get("published", ""), "source": f.get("type", "ESPN")}
+             "published": f.get("published", ""), "source": f.get("type", "ESPN"),
+             "url": ((f.get("links") or {}).get("web") or (f.get("links") or {}).get("mobile") or {}).get("href", "")}
             for f in feed[:limit]
         ]
 
