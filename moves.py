@@ -197,10 +197,15 @@ class MoveEngine:
         if add.position == "D/ST" or add.position == "K":
             gain_week = self.week_pts(add) - (self.week_pts(drop) if drop and drop.position == add.position else 0.0)
             flags.append("streamer")
+        spike = self.spike(add)
+        if spike:                                                   # sanity check: don't trust a one-week outlier at face value; keep a third of the jump
+            cut = 0.65 * (add.week_proj - s.model.ppg(add))
+            if add in s.week_value(new, s.week, use_pool=False)[1]:
+                gain_week, gain_ros = max(gain_week - cut, 0.0), max(gain_ros - cut, 0.0)
         mv = Move(add, drop, gain_week, gain_ros, "", flags=flags, starts=starts, weeks=len(s.weeks))
         mv.blocked = self.validate(add, drop, gain_week, gain_ros, starts)
         need_ros, need_week = self.strategy.min_gain_ros, self.strategy.min_gain_week
-        if self.spike(add):
+        if spike:
             flags.append("speculative")
             need_ros += self.strategy.speculative_extra_gain
             need_week += self.strategy.speculative_extra_gain

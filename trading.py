@@ -197,7 +197,8 @@ def evaluate(world: TradeWorld, other: TeamInfo, give: list[PlayerInfo], get: li
 
 def _score(ev: TradeEval, c: Constraints) -> float:
     bonus = {"likely": 3.0, "coin flip": 0.0, "unlikely": -8.0}[ev.acceptance.label]
-    return ev.my_delta - 0.4 * abs(ev.my_split - c.target_split) + bonus
+    d = ev.my_delta * (0.5 if ev.speculative else 1.0)                           # a gain that rests on beating the consensus counts for half
+    return d - 0.4 * abs(ev.my_split - c.target_split) + bonus
 
 
 # ------------------------------------------------------------------------------------------------------------------

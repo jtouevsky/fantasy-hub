@@ -100,3 +100,24 @@ def moves_block(ctx: Ctx, key: str, max_moves: int = 3, show_streams: bool = Tru
     if ms.empty and show_empty:
         html(ui.notice(f"<b>No move needed.</b> {ui.esc(ms.no_move_reason)}", "good", "check_circle"))
     return n
+
+
+def moves_from_trace(trace: list[dict], key: str) -> None:
+    """Assistant answers that used find_moves also show the engine's moves as compact cards (the answer text can only repeat these)."""
+    for t in trace:
+        if t["tool"] != "find_moves" or t["error"]:
+            continue
+        res = t["result"]
+        for i, m in enumerate(res.get("moves", [])):
+            kind, ic = _CONF[m["confidence"]]
+            title = f"Add {m['add']}" + (f", drop {m['drop']}" if m["drop"] else "")
+            chips = ui.chip(m["confidence"].title() + " confidence", kind, ic) + (ui.chip("Speculative", "warn", "bolt") if "speculative" in m["flags"] else "")
+            html(f'<div class="mv glass-med"><div class="mvh"><b>{ui.esc(title)}</b><span class="num">{m["gain_this_week"]:+.1f} this week · {m["gain_rest_of_season"]:+.1f} rest of season</span></div>'
+                 f'<div class="fh-ctx">{chips}</div></div>')
+            with st.expander("Why", icon=":material/info:"):
+                st.write(m["reason"])
+        for sp in res.get("streaming", []):
+            line = (f"Stream {sp['position']}: add {sp['best']}" + (f", drop {sp['current']}" if sp["current"] else "")) if sp["swap"] else f"Keep your current {sp['position']} ({sp['current']})"
+            html(ui.notice(f"<b>{ui.esc(line)}</b>. {ui.esc(sp['reason'])}", "" if sp["swap"] else "good", "autorenew" if sp["swap"] else "check_circle"))
+        if res.get("no_move_needed"):
+            html(ui.notice("<b>No move needed.</b> " + ui.esc(res.get("no_move_reason", "")), "good", "check_circle"))
