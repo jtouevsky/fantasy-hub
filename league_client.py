@@ -78,7 +78,6 @@ class LeagueClient:
             raise LeagueConnectionError(f"Missing in .env: {', '.join(missing)}")
         self.cfg = cfg
         self._league: Optional[League] = None
-        self._fresh = False            # True right after construction (no need to refresh yet)
         self._bye_map: dict[str, int] = {}
         self.last_warning: str = ""
 
@@ -99,7 +98,6 @@ class LeagueClient:
             raise LeagueConnectionError(f"League {self.cfg.league_id} not found for {self.cfg.year}. Check LEAGUE_ID and YEAR.") from None
         except ESPNUnknownError as e:
             raise LeagueConnectionError(f"ESPN returned an error: {e}") from None
-        self._fresh = True
         return self._league
 
     def _bye_weeks(self, league: League) -> dict[str, int]:
@@ -156,10 +154,9 @@ class LeagueClient:
 
     # ---- snapshot ----------------------------------------------------------
     def fetch_snapshot(self) -> LeagueSnapshot:
+        # espn-api's League.refresh() drops the football Settings class, so reconnect instead.
+        self._league = None
         league = self._connect()
-        if not self._fresh:
-            league.refresh()
-        self._fresh = False
         self.last_warning = ""
         byes = self._bye_weeks(league)
         starters, bench, ir = self._lineup_slots(league)
