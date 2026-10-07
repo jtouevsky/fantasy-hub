@@ -78,3 +78,19 @@ def test_chat_and_oneshot_use_the_shared_runner(client, monkeypatch):
     assert client.get("/api/chat").json()["messages"]
     assert client.post("/api/ai", json={"prompt": "x"}).json()["text"] == "Hello **there**"
     assert client.delete("/api/chat").status_code == 200 and client.get("/api/chat").json()["messages"] == []
+
+
+def test_stability_fields_and_report_card_endpoint(client):
+    r = client.get("/api/report").json()
+    assert r["total"] == 0 and r["rate"] is None
+    t = client.get("/api/team").json()
+    assert t["riskMode"] == "Median"
+    s = client.get("/api/strategy").json()["strategy"]
+    assert s["risk_mode"] == "Median" and s["min_touches"] and s["min_value_edge"]
+    assert client.put("/api/strategy", json={"risk_mode": "Safe"}).status_code == 200
+    import optimizer
+    try:
+        client.get("/api/team")
+        assert optimizer.risk_mode() == "Safe"
+    finally:
+        optimizer.set_risk_mode("Median")

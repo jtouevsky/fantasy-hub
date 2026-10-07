@@ -28,11 +28,13 @@ ROS_AVAILABILITY = {
 
 def blended_ppg(p: PlayerInfo, k: float = K_PRIOR_GAMES) -> float:
     proj = p.season_proj_ppg
-    if p.games_played <= 0:
+    st = p.stable
+    actual, games = (st["ppg"], st["g"]) if st else (p.actual_ppg, p.games_played)      # stability-weighted points (TDs regressed to expected) when available
+    if games <= 0:
         return proj
     if proj <= 0:
-        return p.actual_ppg
-    return (p.games_played * p.actual_ppg + k * proj) / (p.games_played + k)
+        return actual
+    return (games * actual + k * proj) / (games + k)
 
 
 def ros_availability(p: PlayerInfo) -> float:

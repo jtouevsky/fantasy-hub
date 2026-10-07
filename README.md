@@ -134,6 +134,13 @@ Live strengths are the backtest strengths times a documented haircut (`LIVE_SCAL
 ### Agent tools
 `get_edges(player or team, week)`, `get_injury_cascade(team)`, `get_buy_low_sell_high()`, `get_game_environment(game)`. The assistant must cite which adjustments drove its advice (type, size, source, confidence) and say when none applied; it presents cascades as context, not as projection changes.
 
+## Stability-weighted value, the add gate and the report card
+
+* **Stability-weighted value (`edge/stable.py`)** - a player's points are split into *volume points* (yards, receptions) and *touchdown points* under your league scoring, and each is regressed toward what his **opportunity** says it should be (nflverse expected stats and expected TDs): `kv = 8`, `ktd = 10`, fit on 2024 and validated on 2025 ([docs/backtest.md](docs/backtest.md)). Everything (lineups, waivers, trades, the assistant) values players on this number. A receiver with 3 catches and a TD every week now ranks below one with 8 catches and no TDs at the same points per game. Players who score well mostly on TDs from few touches are tagged **TD-dependent** (with the percentages), steady ones **volume-backed**, and snap-share trends **role growing / shrinking**.
+* **Floor / median / ceiling** - each player's weekly outcome distribution (20th / 50th / 80th percentile, by position and TD dependence; coverage checked out of sample). Lineup decisions use the **median**; **My strategy** can switch to **Safe** (weights the floor), **Upside** (the ceiling) or the plain mean.
+* **Quality gate for adds (`moves.py`)** - a free agent is only recommended if his stability-weighted value beats the player he replaces by a clear margin *and* he has real opportunity (touches+targets per game or snap share; thresholds are settings) or a specific sourced reason (injury cascade, depth-chart or role-change news). Every recommendation carries its **evidence** (opportunity metrics, TD share, stable vs raw points, floor/median/ceiling, the rules it passed). "No move needed" is the default.
+* **Report card (More > Report card)** - every recommended add and lineup swap is recorded and later scored: did the player we said to add or start outscore the one he replaced over the games played since (up to 3 weeks)? Weekly hit rate and every outcome are shown.
+
 ## Recommendations v2: moves and trades (one engine for every screen)
 
 Full design, diagnosis, backtests and limits: [docs/trade-engine-v2.md](docs/trade-engine-v2.md).
@@ -179,7 +186,7 @@ referenced by owner first name ("Kaden"). Recommendations are written to the `re
 python -m pytest -q
 ```
 
-Covers the season/market/acceptance models, trade search and moves rules, the lineup optimizer (including a brute-force optimality check), news alert logic, every API endpoint (FastAPI TestClient) and the agent loop (with a scripted fake Claude, so no API key is needed). The assistant's wording on tricky scenarios is a separate manual suite: `RUN_AGENT_SCENARIOS=1 python -m tests.agent_scenarios.run_live`. Backtests: `python -m tools.trade_backtest`, `python -m edge.dst`.
+Covers the season/market/acceptance models, trade search and moves rules, the lineup optimizer (including a brute-force optimality check), news alert logic, every API endpoint (FastAPI TestClient) and the agent loop (with a scripted fake Claude, so no API key is needed). The assistant's wording on tricky scenarios is a separate manual suite: `RUN_AGENT_SCENARIOS=1 python -m tests.agent_scenarios.run_live`. Backtests: `python -m tools.trade_backtest`, `python -m edge.dst`, `python -m edge.stable`.
 
 ## Layout
 

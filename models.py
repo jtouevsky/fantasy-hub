@@ -42,6 +42,7 @@ class PlayerInfo:
     market: dict = field(default_factory=dict)     # ESPN consensus signals: adp, auction, ppr_rank, ros_pos_rank, owned, started
     return_games: float = -1.0                     # expected additional games missed (from news); -1 = unknown, use status defaults
     added_ts: float = 0.0                          # epoch seconds when MY team added him (0 = unknown / not recent)
+    stable: dict = field(default_factory=dict)     # stability-weighted value (edge/stable.py): ppg, volume/TD split, expected TDs, floor/median/ceiling ratios, opportunity metrics
 
     @property
     def edge_total(self) -> float:

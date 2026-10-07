@@ -33,6 +33,7 @@ class Move:
     blocked: list[str] = field(default_factory=list)     # validation failures (the move must not be shown if any)
     starts: int = 0                        # weeks he would start for me
     weeks: int = 0
+    evidence: dict = field(default_factory=dict)         # opportunity metrics, TD dependence, value edge and the rules this move passed
 
     @property
     def ok(self) -> bool:
@@ -49,7 +50,7 @@ class Move:
     def to_dict(self) -> dict:
         return {"add": self.add.name, "add_id": self.add.player_id, "position": self.add.position, "drop": self.drop.name if self.drop else None,
                 "drop_id": self.drop.player_id if self.drop else None, "gain_this_week": round(self.gain_week, 1), "gain_rest_of_season": round(self.gain_ros, 1),
-                "confidence": self.confidence, "reason": self.reason, "flags": self.flags, "kind": self.kind}
+                "confidence": self.confidence, "reason": self.reason, "flags": self.flags, "kind": self.kind, "evidence": self.evidence}
 
 
 @dataclass
@@ -89,8 +90,9 @@ class MoveSet:
 
 class MoveEngine:
     def __init__(self, snap: LeagueSnapshot, season: Season, strategy: Strategy, fas: list[PlayerInfo], activity: list[dict] = (),
-                 dst: Optional[dict] = None, dst_next: Optional[dict] = None, now: Optional[float] = None):
+                 dst: Optional[dict] = None, dst_next: Optional[dict] = None, now: Optional[float] = None, news_reasons: Optional[dict] = None):
         self.snap, self.season, self.strategy, self.fas = snap, season, strategy, list(fas)
+        self.news_reasons = news_reasons or {}                  # {player_id: "specific reason"} (injury cascade, depth-chart promotion, role-change news)
         self.now = now if now is not None else time.time()
         self.dst, self.dst_next = dst or {}, dst_next or {}
         self.me = snap.my_team
@@ -187,6 +189,63 @@ class MoveEngine:
                 why.append(sp.reason if not sp.swap else f"The best {add.position} this week is {sp.best.name if sp.best else 'someone else'}, not {add.name}.")
         return why
 
+    # ---- quality gate: a recommended add must be better AND have real opportunity (or a specific, sourced reason) ----------
+    def opportunity(self, p: PlayerInfo) -> dict:
+        """Opportunity numbers for a player from the stability profile (None for a field when the data does not have it)."""
+        st = p.stable or {}
+        return {"snap_pct": st.get("snap_pct"), "touches_pg": st.get("touches_pg"), "targets_pg": st.get("targets_pg"), "carries_pg": st.get("carries_pg"),
+                "target_share": st.get("target_share"), "rz_touch_pg": st.get("rz_touch_pg"), "td_share": st.get("td_share"), "td_act_pg": st.get("td_act_pg"),
+                "td_exp_pg": st.get("td_exp_pg"), "raw_ppg": st.get("raw_ppg"), "known": bool(st)}
+
+    def gate(self, add: PlayerInfo, drop: Optional[PlayerInfo], starts_add: int) -> tuple[list[str], list[str], dict]:
+        """(blocking reasons, rules passed, evidence). Streaming positions (K, D/ST) are governed by the streaming rules instead."""
+        s, m = self.strategy, self.season.model
+        add_v = m.ppg(add)
+        bench = [p for p in self.me.roster if p.lineup_slot not in ("IR",) and p.position == add.position and (not drop or p.player_id != drop.player_id)]
+        ref = drop or (min(bench, key=m.ppg) if bench else None)
+        ev = {"value": {"add_stable_ppg": round(add_v, 1), "add_raw_ppg": round(add.actual_ppg, 1), "vs": ref.name if ref else None, "vs_stable_ppg": round(m.ppg(ref), 1) if ref else None},
+              "opportunity": self.opportunity(add), "distribution": None, "rules": [], "news_reason": self.news_reasons.get(add.player_id)}
+        r = (add.stable or {}).get("r")
+        if r:
+            ev["distribution"] = {"floor": round(add.week_proj * r[0], 1), "median": round(add.week_proj * r[1], 1), "ceiling": round(add.week_proj * r[2], 1)}
+        if add.position in ("K", "D/ST"):
+            return [], [], ev
+        why, passed = [], []
+        # (a) beats the player he replaces by a clear margin, on STABILITY-weighted points per game
+        if ref is not None:
+            edge = add_v - m.ppg(ref)
+            ev["value"]["edge"] = round(edge, 1)
+            if edge >= s.min_value_edge:
+                passed.append(f"Stability-weighted value {add_v:.1f} ppg beats {ref.name} ({m.ppg(ref):.1f}) by {edge:.1f} (needs {s.min_value_edge:g}).")
+            elif starts_add == 0 or edge < 0:
+                why.append(f"His stability-weighted value ({add_v:.1f} ppg) doesn't beat {ref.name} ({m.ppg(ref):.1f}) by the required {s.min_value_edge:g}.")
+        # (b) real opportunity, or a specific sourced reason
+        o, st = ev["opportunity"], add.stable or {}
+        reason = self.news_reasons.get(add.player_id)
+        if st:
+            snap_ok = (o["snap_pct"] or 0) >= s.min_snap_share
+            touch_ok = (o["touches_pg"] or 0) >= s.min_touches and add.position != "QB"
+            qb_ok = add.position == "QB" and (o["snap_pct"] or 0) >= 0.8
+            if snap_ok or touch_ok or qb_ok:
+                bits = []
+                if touch_ok:
+                    bits.append(f"{o['touches_pg']:.1f} touches+targets per game (needs {s.min_touches:g})")
+                if snap_ok:
+                    bits.append(f"{(o['snap_pct'] or 0) * 100:.0f}% of offensive snaps (needs {s.min_snap_share * 100:.0f}%)")
+                passed.append("Real opportunity: " + "; ".join(bits or ["starting quarterback role"]) + ".")
+            elif reason:
+                passed.append(f"Low current opportunity, but there is a specific reason: {reason}")
+            else:
+                why.append(f"Low opportunity: {o['touches_pg'] or 0:.1f} touches+targets per game and {(o['snap_pct'] or 0) * 100:.0f}% of snaps (needs {s.min_touches:g} touches or {s.min_snap_share * 100:.0f}% of snaps), and no injury or depth-chart news explains a bigger role.")
+            if st.get("dependent") and not reason:
+                why.append(f"TD-dependent: {st['td_share'] * 100:.0f}% of his points come from touchdowns on {st['touches_pg']:.1f} touches+targets per game.")
+        else:
+            ev["rules"].append("No opportunity data for this player (rookie or not in nflverse yet): treated as unverified.")
+            if reason:
+                passed.append(f"Specific reason: {reason}")
+        ev["rules"] = passed + ev["rules"]
+        return why, passed, ev
+
     # ---- scoring -------------------------------------------------------------------------
     def evaluate_move(self, add: PlayerInfo, drop: Optional[PlayerInfo]) -> Move:
         s = self.season
@@ -207,6 +266,10 @@ class MoveEngine:
                 gain_week, gain_ros = max(gain_week - cut, 0.0), max(gain_ros - cut, 0.0)
         mv = Move(add, drop, gain_week, gain_ros, "", flags=flags, starts=starts, weeks=len(s.weeks))
         mv.blocked = self.validate(add, drop, gain_week, gain_ros, starts)
+        gate_why, _, mv.evidence = self.gate(add, drop, starts)
+        mv.blocked += gate_why
+        if add.position not in ("K", "D/ST") and not add.stable and add.position in ("QB", "RB", "WR", "TE"):
+            flags.append("unverified")
         need_ros, need_week = self.strategy.min_gain_ros, self.strategy.min_gain_week
         if spike:
             flags.append("speculative")
@@ -219,7 +282,7 @@ class MoveEngine:
         return mv
 
     def _confidence(self, m: Move) -> str:
-        if "speculative" in m.flags or m.add.games_played < 2:
+        if "speculative" in m.flags or "unverified" in m.flags or m.add.games_played < 2:
             return "low"
         if m.gain_ros >= 12 and m.starts >= 0.5 * max(m.weeks, 1):
             return "high"
@@ -240,12 +303,19 @@ class MoveEngine:
             tail.append(f"Drop {d.name} ({why})")
         if "speculative" in m.flags:
             tail.append("speculative: his projection this week is far above his recent level, so this leans on one number")
+        o = m.evidence.get("opportunity") or {}
+        if o.get("known"):
+            tail.append(f"{(o.get('touches_pg') or 0):.1f} touches+targets/game, {(o.get('snap_pct') or 0) * 100:.0f}% of snaps, {(o.get('td_share') or 0) * 100:.0f}% of points from TDs")
+        elif "unverified" in m.flags:
+            tail.append("no opportunity data for him yet, so treat this as unverified")
+        if m.evidence.get("news_reason"):
+            tail.append(m.evidence["news_reason"])
         if a.edge:
             top = max(a.edge, key=lambda x: abs(x["delta"]))
             tail.append(top["reason"])
         elif a.tags:
             tail.append(f"tagged {a.tags[0][0]}")
-        out = bits[0] + ("; " + "; ".join(tail[:2]) if tail else "") + "."
+        out = bits[0] + ("; " + "; ".join(tail[:3]) if tail else "") + "."
         if beginner and a.position == "D/ST":
             out += " (D/ST = a team's defense, scored on sacks, turnovers and points allowed.)"
         return out
@@ -315,7 +385,9 @@ class MoveEngine:
         s = self.season
         streams = [self.stream_pick(pos) for pos in sorted(self.strategy.streaming) if self.snap.starter_slots.get(pos)]
         cands = [p for p in self.fas if p.position in ("QB", "RB", "WR", "TE") and not p.is_out and not p.on_bye]
-        short = sorted(cands, key=lambda p: -(s.raw_ros(p) + s.upside(p)))[:pool // 2] + sorted(cands, key=lambda p: -p.week_proj)[:pool // 2]
+        short = sorted(cands, key=lambda p: -p.week_proj)[:pool // 3]
+        for pos in ("QB", "RB", "WR", "TE"):                                  # every position gets its own shortlist so a crowded position can't hide the others
+            short += sorted((p for p in cands if p.position == pos), key=lambda p: -(s.raw_ros(p) + s.upside(p)))[:max(4, pool // 6)]
         seen, results = set(), []
         for fa in short:
             if fa.player_id in seen:

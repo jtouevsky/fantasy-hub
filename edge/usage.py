@@ -28,6 +28,12 @@ def usage_summary(h, gsis: str, season: int, tw: int) -> dict:
         out["snap_share"] = float(s.offense_pct.mean())
         if len(s) >= 2:
             out["snap_share_last2"] = float(s.offense_pct.tail(2).mean())
+    rz = getattr(h, "rz", None)
+    if rz is not None and len(rz):
+        r = rz[(rz.gsis == gsis) & (rz.season == season) & (rz.t < tw)]
+        gp = g
+        out["rz_touch_pg"] = float((r.rz_carries.sum() + r.rz_targets.sum()) / gp)
+        out["gl_touch_pg"] = float((r.gl_carries.sum() + r.gl_targets.sum()) / gp)
     x = h.xfp[(h.xfp.gsis == gsis) & (h.xfp.season == season) & (h.xfp.t < tw)]
     if len(x):
         out["xfp_pg"], out["actual_pg"] = float(x.xfp.mean()), float(x.xfp_actual.mean())
@@ -46,6 +52,8 @@ def usage_cells(u: dict, pos: str) -> list[tuple[str, str, str]]:
     if pos in ("RB", "QB") and u.get("carries_pg", 0) >= 1:
         sh = f" · {u['carry_share'] * 100:.0f}% of team carries" if "carry_share" in u else ""
         cells.append((f"{u['carries_pg']:.1f}", "Carries / game", f"rushing attempts{sh}"))
+    if "rz_touch_pg" in u and pos in ("RB", "WR", "TE", "QB"):
+        cells.append((f"{u['rz_touch_pg']:.1f}", "Red-zone touches / game", f"carries + targets inside the 20 · inside the 5: {u['gl_touch_pg']:.1f} (the opportunities touchdowns come from)"))
     if "xfp_pg" in u:
         cells.append((f"{u['xfp_pg']:.1f} vs {u['actual_pg']:.1f}", "Expected vs actual pts", "points his opportunities were worth vs what he scored (per game)"))
     return cells

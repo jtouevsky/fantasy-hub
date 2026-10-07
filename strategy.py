@@ -30,6 +30,11 @@ class Strategy:
     min_gain_ros: float = 4.0                # ...this many rest-of-season points
     speculative_extra_gain: float = 3.0      # extra gain demanded when the projection is a one-week outlier
     explanation: str = "Short"               # "Short" (no definitions) or "Beginner" (explain D/ST, IR, bye...)
+    # stability / quality gate for adds
+    risk_mode: str = "Median"                # lineup decisions: Median (default) | Safe (weights the floor) | Upside (weights the ceiling) | Mean
+    min_touches: float = 6.0                 # an add needs real opportunity: touches+targets per game (RB/WR/TE) ...
+    min_snap_share: float = 0.50             # ... or this offensive snap share, unless there is a news/edge-backed reason
+    min_value_edge: float = 1.5              # stable ppg the add must beat the dropped player by (points per game)
     # trade tuning
     accept_threshold: float = 0.0            # logit above which an offer counts as "plausible"
     extra: dict = field(default_factory=dict)

@@ -16,8 +16,8 @@ export default function Team() {
     <>
       <div style={{ display: 'flex', gap: 16, justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center' }}>
         <div className="kpis">
-          <div className="kpi"><b>{d.currentTotal.toFixed(1)}</b><small>Current projected</small></div>
-          <div className="kpi"><b>{d.optimalTotal.toFixed(1)}</b><small>Optimal projected</small></div>
+          <div className="kpi"><b>{d.currentTotal.toFixed(1)}</b><small>Current projected ({d.riskMode.toLowerCase()})</small></div>
+          <div className="kpi"><b>{d.optimalTotal.toFixed(1)}</b><small>Optimal projected ({d.riskMode.toLowerCase()})</small></div>
           <div className="kpi"><b className={d.gain > 0.05 ? 'up' : ''}>{signed(d.gain)}</b><small>Possible gain</small></div>
         </div>
         <label className="toggle" title={d.hasSwaps ? 'Shows where each player would sit. Nothing is changed in ESPN.' : 'Your lineup is already optimal.'}>

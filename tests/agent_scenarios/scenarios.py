@@ -98,4 +98,46 @@ def no_good_moves() -> Scenario:
     return Scenario("no_good_moves", "Any waiver moves this week?", t, check, must=["no move"], must_not=["re:0\\.0 (points )?(of )?rest.of.season (value|points)"])
 
 
-ALL = [dst_just_added, two_qbs_never_a_third, one_week_spike, no_good_moves]
+def _stab(ppg, touches, snap, td_share, dep=False, vol=False, raw=None):
+    return {"ppg": ppg, "g": 8, "raw_ppg": raw if raw is not None else ppg, "touches_pg": touches, "snap_pct": snap, "td_share": td_share, "td_act_pg": 0.9, "td_exp_pg": 0.4,
+            "targets_pg": touches, "carries_pg": 0.0, "dependent": dep, "volume_backed": vol, "r": [0.4, 0.9, 1.5], "rz_touch_pg": 1.0}
+
+
+def td_fluke_free_agent() -> Scenario:
+    fluke = mk(8010, "TD Fluke WR", "WR", 9.0, team="CLE", proj=15.0, gp=8)
+    fluke.stable = _stab(6.5, 3.2, 0.33, 0.58, dep=True, raw=14.5)
+    t = _tools(fas_extra=[fluke])
+    def check(res):
+        assert all(m["add"] != "TD Fluke WR" for m in res["moves"])
+    return Scenario("td_fluke_fa", "Should I pick up TD Fluke WR? He just scored twice.", t, check, must=["re:td|touchdown"], must_not=[r"re:(?<!not )(?<!don't )(?<!never )\badd td fluke wr\b(?! is)"])
+
+
+def volume_receiver_no_tds() -> Scenario:
+    fluke = mk(8011, "TD Fluke WR", "WR", 9.0, team="CLE", proj=15.0, gp=8)
+    fluke.stable = _stab(6.5, 3.2, 0.33, 0.58, dep=True, raw=14.5)
+    vol = mk(8012, "Volume WR", "WR", 12.0, team="DEN", gp=8)
+    vol.stable = _stab(15.2, 10.5, 0.86, 0.0, vol=True, raw=12.0)
+    t = _tools(fas_extra=[fluke, vol])
+    def check(res):
+        adds = [m["add"] for m in res["moves"]]
+        assert "Volume WR" in adds and "TD Fluke WR" not in adds
+        top = next(m for m in res["moves"] if m["add"] == "Volume WR")
+        assert top["evidence"]["opportunity"]["touches_pg"] == 10.5
+    return Scenario("volume_wr_over_fluke", "Which receiver should I pick up: TD Fluke WR or Volume WR?", t, check, must=["volume wr"], must_not=[r"re:(?<!not )(?<!don't )(?<!never )\badd td fluke wr\b(?! is)"])
+
+
+def no_worthwhile_adds() -> Scenario:
+    nobody = mk(8013, "Low Role WR", "WR", 7.0, team="CLE", proj=11.0, gp=8)
+    nobody.stable = _stab(6.0, 2.5, 0.25, 0.3)
+    def tweak(snap, fas):
+        for p in fas:
+            if p.player_id != 8013:
+                p.week_proj = p.season_proj_ppg = 1.0
+                p.total_points = 4.0
+    t = _tools(fas_extra=[nobody], tweak=tweak)
+    def check(res):
+        assert all(m["add"] != "Low Role WR" for m in res["moves"]) and res["no_move_needed"] is True
+    return Scenario("no_worthwhile_adds", "Is there any add worth making right now?", t, check, must=["no move"])
+
+
+ALL = [dst_just_added, two_qbs_never_a_third, one_week_spike, no_good_moves, td_fluke_free_agent, volume_receiver_no_tds, no_worthwhile_adds]

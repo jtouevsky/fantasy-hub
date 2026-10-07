@@ -41,7 +41,8 @@ ROS_PERSIST = 0.8                   # share of a weekly cascade that persists pe
 SKILL = ("QB", "RB", "WR", "TE")
 TAG_TEXT = {"buy low": "His opportunities (expected points) have outrun his production over the last 4 games; history says production catches up.",
             "sell high": "He has produced well above what his opportunities justify over the last 4 games; history says that fades.",
-            "role growing": "His snap share has risen over the last 2 games (informational: backtest found this alone is not predictive)."}
+            "role growing": "His snap share has risen over the last 2 games (informational: backtest found this alone is not predictive).",
+            "role shrinking": "His snap share has fallen over the last 2 games (informational: treat it as a reason to look closer, not a verdict)."}
 
 
 @dataclass
@@ -369,7 +370,7 @@ def run_engine(players: list, hist: Hist, season: int, week: int, *, sleeper_ind
     for pid, g in gsis_of.items():
         if g in sig_by.index:
             gap, ds = sig_by.at[g, "gap4"], sig_by.at[g, "dsnap"] if "dsnap" in sig_by else np.nan
-            tg = [(t, TAG_TEXT[t] + (f" (xFP gap {gap:+.1f} pts/game)" if t != "role growing" and gap == gap else "")) for t in tag_for(gap, ds)]
+            tg = [(t, TAG_TEXT[t] + (f" (xFP gap {gap:+.1f} pts/game)" if t not in ("role growing", "role shrinking") and gap == gap else "")) for t in tag_for(gap, ds)]
             if tg:
                 res.tags[pid] = tg
     if "regression" in mods and mods["regression"].get("alpha", 0) > 0 and len(sig):

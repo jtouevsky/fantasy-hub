@@ -16,13 +16,35 @@ from models import PlayerInfo
 RISK_MULTIPLIER = {"QUESTIONABLE": 0.92, "DOUBTFUL": 0.5}
 
 _BIG = 1e6
+RISK_MODES = ("Median", "Safe", "Upside", "Mean")
+_MODE = {"mode": "Median"}
+
+
+def set_risk_mode(mode: str) -> None:
+    """Lineup decisions use the MEDIAN outcome by default; 'Safe' also weights the floor, 'Upside' the ceiling, 'Mean' is the plain projection."""
+    _MODE["mode"] = mode if mode in RISK_MODES else "Median"
+
+
+def risk_mode() -> str:
+    return _MODE["mode"]
+
+
+def dist_value(p: PlayerInfo, mode: Optional[str] = None) -> float:
+    """This week's value under the chosen risk mode, from the player's weekly outcome distribution (floor/median/ceiling ratios x his projection)."""
+    mode = mode or _MODE["mode"]
+    r = (p.stable or {}).get("r")
+    if not r or mode == "Mean":
+        return p.week_proj
+    lo, mid, hi = r
+    f = {"Median": mid, "Safe": 0.5 * mid + 0.5 * lo, "Upside": 0.5 * mid + 0.5 * hi}.get(mode, mid)
+    return p.week_proj * f
 
 
 def availability(p: PlayerInfo) -> float:
     """Risk-adjusted projection for the current week (0 when they cannot play)."""
     if p.is_out or p.on_bye or p.lineup_slot == "IR":
         return 0.0
-    return p.week_proj * RISK_MULTIPLIER.get(p.injury_status, 1.0)
+    return dist_value(p) * RISK_MULTIPLIER.get(p.injury_status, 1.0)
 
 
 def can_start(p: PlayerInfo) -> bool:

@@ -47,7 +47,20 @@ export default function PlayerSheet({ id, onClose }: { id: number; onClose: () =
           <div className="actions"><button className="btn sm" onClick={toggle}><Icon n="star" /> {p.watch ? 'Stop watching' : 'Watch'}</button>
             <button className="btn sm" onClick={() => { askAI(`Tell me about ${p.name}: usage, outlook, and whether I should add, start, trade for or drop him. Use the tools.`, p.name); }}><Icon n="auto_awesome" /> Ask AI</button></div>
 
-          {p.usage.length > 0 && <><Section title="Usage & opportunity" aside="this season, from play-by-play data" /><div className="kv">{p.usage.map((u: any) => <div key={u.label}><b>{u.value}</b><small>{u.label}</small><span className="hint">{u.hint}</span></div>)}</div></>}
+          {p.st && <>
+            <Section title="Stability" aside="touchdowns regressed toward what his opportunities predict" />
+            <div className="kv">
+              <div><b>{p.st.ppg.toFixed(1)}</b><small>Stable points / game{p.st.raw !== p.st.ppg ? ` (raw ${p.st.raw.toFixed(1)})` : ''}</small><span className="hint">last {p.st.g} games, your scoring</span></div>
+              <div><b>{Math.round(p.st.tdShare * 100)}%</b><small>of his points from TDs</small><span className="hint">{p.st.volPg?.toFixed(1)} volume + {p.st.tdPg?.toFixed(1)} TD pts/game</span></div>
+              <div><b>{p.st.tdAct?.toFixed(2)} vs {p.st.tdExp?.toFixed(2)}</b><small>TDs per game: actual vs expected</small><span className="hint">expected = what his targets and carries usually produce</span></div>
+              <div><b>{p.st.fmc[0]} / {p.st.fmc[1]} / {p.st.fmc[2]}</b><small>This week: floor / median / ceiling</small><span className="hint">20th / 50th / 80th percentile outcome</span></div>
+            </div>
+            <div className="dist" aria-hidden="true"><span>{p.st.fmc[0]}</span><div className="rail"><i style={{ left: `${(100 * p.st.fmc[0]) / (p.st.fmc[2] * 1.15)}%`, right: `${100 - (100 * p.st.fmc[2]) / (p.st.fmc[2] * 1.15)}%` }} /><u style={{ left: `${(100 * p.st.fmc[1]) / (p.st.fmc[2] * 1.15)}%` }} /></div><span>{p.st.fmc[2]}</span></div>
+            {p.st.dep && <Notice kind="warn" icon="casino"><b>TD-dependent.</b> A big share of his points come from touchdowns on few touches. If he doesn't score, he tanks; the model counts him at {p.st.ppg.toFixed(1)} ppg, not {p.st.raw.toFixed(1)}.</Notice>}
+            {p.st.vol && <Notice kind="good" icon="stacked_bar_chart"><b>Volume-backed.</b> His production is built on touches and targets, so it is steadier week to week.</Notice>}
+          </>}
+          {p.usage.length > 0 && <><Section title="Usage & opportunity" aside="this season, from play-by-play data" /><div className="kv">{p.usage.map((u: any) => <div key={u.label}><b>{u.value}</b><small>{u.label}</small><span className="hint">{u.hint}</span></div>)}
+            <div><b>n/a</b><small>Route participation</small><span className="hint">not in free NFL data; use snap and target share</span></div></div></>}
           {p.context?.length > 0 && <><Section title="Opportunity context" aside="information only" /><EdgeContext p={p} /></>}
           {(p.hasEdge || p.tags.length > 0) ? <><Section title="Edge vs ESPN" aside="adjustments on top of ESPN's projection" />
             {p.hasEdge ? <EdgeWhy p={p} open /> : <Notice icon="info">No projection adjustment this week for him (no data, or nothing cleared the noise threshold).</Notice>}
