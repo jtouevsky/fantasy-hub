@@ -10,7 +10,7 @@ LEAGUE_IMPLIED = 22.5
 OUTDOOR = {"outdoors", "open"}
 
 
-def eval_frame(h: Hist, seasons: list[int], weeks=range(3, 19), min_prev: int = 2, min_base: float = 5.0) -> pd.DataFrame:
+def eval_frame(h: Hist, seasons: list[int], weeks=range(3, 19), min_prev: int = 2, min_base: float = 3.0) -> pd.DataFrame:
     """Player-games to score: played, >= min_prev prior games, baseline >= min_base (fantasy-relevant)."""
     b = h.with_baseline()
     b = b.merge(game_context(h), on=["season", "week", "team"], how="left", suffixes=("", "_g"))
