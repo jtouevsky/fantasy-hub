@@ -25,9 +25,9 @@ def ratio(a, b):
     return (la + .05) / (lb + .05)
 
 
-LIGHT = dict(bg="#fbf5e8", card="#ffffff", ink="#16130f", ink2="#4a443a", ink3="#766f62", cobalt="#2d5bff", lime="#c8f031", coral="#ff5d48", sun="#ffc83d", grape="#7c4dff", teal="#10b5a4",
+LIGHT = dict(bg="#fbf5e8", card="#ffffff", ink="#16130f", ink2="#4a443a", ink3="#766f62", cobalt="#446bf2", lime="#c5e647", coral="#f56d5c", sun="#f5c753", grape="#805be8", teal="#24aea0",
              good="#087a45", warn="#8f5200", bad="#c8102e", info="#2d4fd0")
-DARK = dict(bg="#14131c", card="#211f30", ink="#f6f1e4", ink2="#c9c2b2", ink3="#9a9384", cobalt="#4666f2", lime="#c8f031", coral="#ff7561", sun="#ffc83d", grape="#7f52f0", teal="#2bd0be",
+DARK = dict(bg="#14131c", card="#211f30", ink="#f6f1e4", ink2="#c9c2b2", ink3="#9a9384", cobalt="#556ddd", lime="#c5e647", coral="#f58271", sun="#f5c753", grape="#835edd", teal="#3ec8b9",
             good="#4ad28f", warn="#ffc83d", bad="#ff7a8e", info="#9db2ff")
 
 
@@ -40,16 +40,21 @@ def pairs(t, dark):
     for k, a in (("good", .13), ("warn", .34 if not dark else .17), ("bad", .11 if not dark else .16), ("info", .11 if not dark else .2)):
         tint = {"good": t["good"], "warn": "#ffc83d", "bad": t["bad"], "info": t["cobalt"]}[k]
         out.append((f"{k} text on its tint (over card)", t[k], over(tint, a, t["card"]), 4.5))
-    out.append(("ink text on lime value panel", "#16130f", "#c8f031", 4.5)); out.append(("ink text on sunflower value panel", "#16130f", "#ffc83d", 4.5))
+    out.append(("ink text on lime value panel", "#16130f", t["lime"], 4.5)); out.append(("ink text on sunflower value panel", "#16130f", t["sun"], 4.5))
     return out
 
 
-bad = 0
-for name, t, dark in (("LIGHT", LIGHT, False), ("DARK", DARK, True)):
-    print(f"\n{name}")
-    for label, fg, bg, need in pairs(t, dark):
-        r = ratio(fg, bg)
-        ok = r >= need
-        bad += not ok
-        print(f"  {'ok  ' if ok else 'FAIL'} {r:5.2f}:1 (need {need}) {label}  {fg} on {bg}")
-sys.exit(1 if bad else 0)
+def main() -> int:
+    bad = 0
+    for name, t, dark in (("LIGHT", LIGHT, False), ("DARK", DARK, True)):
+        print(f"\n{name}")
+        for label, fg, bg, need in pairs(t, dark):
+            r = ratio(fg, bg)
+            ok = r >= need
+            bad += not ok
+            print(f"  {'ok  ' if ok else 'FAIL'} {r:5.2f}:1 (need {need}) {label}  {fg} on {bg}")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

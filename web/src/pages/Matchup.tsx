@@ -30,11 +30,11 @@ export default function Matchup() {
       <Scoreboard s={s} age={d.age} ttl={d.ttl} variant="flap" />
       {d.started && !d.demo && <Notice icon="sync">Scores update when you press <b>Refresh</b> (about every few minutes at most). This is not a live feed.</Notice>}
       <div className="ctxrow" style={{ marginTop: 14 }}><Chip icon="sports_football">{d.remainingA} of your starters yet to play</Chip><Chip icon="sports_football">{d.remainingB} of theirs yet to play</Chip></div>
-      {d.envs.length > 0 && <><Section title="Game environment" aside="Vegas lines + forecast, as of the last refresh" />
-        {d.envs.map((e: any, i: number) => <div key={i} style={{ margin: '8px 0' }}><TeamBadge abbr={e.team} size={26} /> <b>{e.team}</b> vs <TeamBadge abbr={e.opp} size={26} /> <b>{e.opp}</b> <span className="fresh">{e.kickoff}</span><GameEnv e={e} /></div>)}</>}
       <Section title="Starters head to head" aside="your side left" />
       <div className="rows">{d.duels.map((x: any, i: number) => <div key={i} className="duel"><Half p={x.a} right={false} win={x.winA} started={d.started} /><div className="mid">{x.slot}</div><Half p={x.b} right win={x.winB} started={d.started} /></div>)}</div>
       <div className="fresh" style={{ marginTop: 8 }}>Starter projections sum to {d.sumA.toFixed(1)} vs {d.sumB.toFixed(1)}; ESPN's team projections above may differ slightly. Highlighted = higher {d.started ? 'actual' : 'projected'} points at that slot.</div>
+      {d.envs.length > 0 && <><Section title="Game environment" aside="Vegas lines + forecast, as of the last refresh" />
+        {d.envs.map((e: any, i: number) => <div key={i} style={{ margin: '8px 0' }}><TeamBadge abbr={e.team} size={26} /> <b>{e.team}</b> vs <TeamBadge abbr={e.opp} size={26} /> <b>{e.opp}</b> <span className="fresh">{e.kickoff}</span><GameEnv e={e} /></div>)}</>}
       <div className="actions"><AskAI label="Break down this matchup" prompt={`Break down my week ${s.week} matchup against ${s.opp.name}: where am I strong or weak, and what could swing it?`} title="Matchup breakdown" icon="scoreboard" /></div>
     </>
   )
