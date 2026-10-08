@@ -19,19 +19,22 @@ function Trend({ h, color }: { h: any; color: string }) {
   )
 }
 
-export default function PlayerSheet({ id, onClose }: { id: number; onClose: () => void }) {
+export default function PlayerSheet({ id, onClose, embedded = false }: { id: number; onClose: () => void; embedded?: boolean }) {
   const { data: p, isLoading, error } = useApi<any>(`/api/player/${id}`, { stale: 60_000 })
   const hist = useApi<any>(`/api/player/${id}/history`, { stale: 10 * 60_000 })
   const news = useApi<any>(`/api/player/${id}/news`, { stale: 10 * 60_000 })
   const { toast, askAI } = useActions()
   const boot = useBoot()
   const toggle = async () => { const r = await post(`/api/watch/${id}`); qc.invalidateQueries({ queryKey: [`/api/player/${id}`] }); toast(r.watching ? 'Added to your watchlist' : 'Removed from your watchlist') }
+  const Wrap = ({ children }: { children: React.ReactNode }) => embedded
+    ? <div className="panel-in sheet"><div className="panel-head"><b>Player</b><button className="iconbtn" onClick={onClose} aria-label="Close player panel"><Icon n="close" /></button></div>{children}</div>
+    : <Modal onClose={onClose} title="Player">{children}</Modal>
   return (
-    <Modal onClose={onClose} title="Player">
+    <Wrap>
       {error ? <Notice kind="warn" icon="person_off">{(error as Error).message}</Notice> : isLoading || !p ? <Skel n={3} h={90} /> : (
         <>
           <div className="hero-player" style={{ '--tc': p.color } as any}>
-            <Avatar p={p} size={120} big />
+            <Avatar p={p} size={embedded ? 104 : 120} />
             <div style={{ minWidth: 0 }}><h2>{p.name}</h2>
               <div className="ctxrow" style={{ marginTop: 10 }}><Chip kind="pos">{p.pos}</Chip><StatusChip p={p} />
                 {p.ownerTeam?.me ? <Chip kind="good" icon="shield">On your team</Chip> : p.ownerTeam ? <Chip icon="groups">On {p.ownerTeam.name}</Chip> : <Chip kind="info" icon="person_add">Free agent{p.owned >= 0 ? ` · ${Math.round(p.owned)}% owned` : ''}</Chip>}
@@ -87,6 +90,6 @@ export default function PlayerSheet({ id, onClose }: { id: number; onClose: () =
           {hist.isLoading ? <Skel n={1} h={190} /> : hist.data ? <>{hist.data.demo && <Notice kind="warn" icon="science">Demo data: this history is made up.</Notice>}<Trend h={hist.data} color={p.color} /><div className="fresh">Scoring: {p.scoring}</div></> : null}
           <div className="fresh"><Icon n="event" /> Week {p.week}: {p.weekLabel}{p.bye ? ` · bye is week ${p.bye}` : ''}</div>
         </>)}
-    </Modal>
+    </Wrap>
   )
 }

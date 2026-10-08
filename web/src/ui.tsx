@@ -4,7 +4,7 @@ import type { Boot, FTeam, Player } from './types'
 // ---- app-wide context ------------------------------------------------------------------
 export const BootCtx = createContext<Boot | null>(null)
 export const useBoot = () => useContext(BootCtx) as Boot
-export interface Actions { openPlayer: (id: number) => void; askAI: (prompt: string, title: string) => void; toast: (msg: string) => void }
+export interface Actions { openPlayer: (id: number, origin?: HTMLElement | null) => void; askAI: (prompt: string, title: string) => void; toast: (msg: string) => void }
 export const ActionsCtx = createContext<Actions>({ openPlayer: () => {}, askAI: () => {}, toast: () => {} })
 export const useActions = () => useContext(ActionsCtx)
 
@@ -49,26 +49,26 @@ export const TeamBadge = memo(function TeamBadge({ abbr, size = 22, ring = true 
 
 const initials = (n: string) => { const p = n.replace(/\./g, ' ').split(/\s+/).filter(Boolean); return !p.length ? '?' : p.length === 1 ? p[0].slice(0, 2).toUpperCase() : (p[0][0] + p[p.length - 1][0]).toUpperCase() }
 
-export const Avatar = memo(function Avatar({ p, size = 44, big = false }: { p: Pick<Player, 'name' | 'pos' | 'team' | 'color' | 'img'>; size?: number; big?: boolean }) {
+/** Player portrait. The initials fallback exists ONLY when there is no image or it failed to load; behind a loaded image there is just the team-color backdrop.
+ *  The image fills the circle (object-fit: cover, anchored near the top so heads are never cut off); the source is picked by displayed size. */
+export const Avatar = memo(function Avatar({ p, size = 44 }: { p: Pick<Player, 'name' | 'pos' | 'team' | 'color' | 'img'>; size?: number; big?: boolean }) {
   const [bad, setBad] = useState(false)
   if (p.pos === 'D/ST') return <TeamBadge abbr={p.team} size={size} />
-  const src = p.img ? (big ? p.img.l : p.img.s) : null
+  const src = p.img ? (size <= 46 ? p.img.s : p.img.m) : null
+  const showImg = !!src && !bad
   return (
-    <span className="avatar" style={{ '--s': `${size}px`, '--tc': p.color } as any}>
-      <span>{initials(p.name)}</span>
-      {src && !bad && <img src={src} alt="" width={size} height={Math.round(size * 0.73)} loading="lazy" decoding="async" onError={() => setBad(true)} />}
+    <span className="avatar" data-fb={showImg ? undefined : ''} style={{ '--s': `${size}px`, '--tc': p.color } as any}>
+      {showImg ? <img src={src!} alt="" width={size} height={size} loading={size >= 100 ? 'eager' : 'lazy'} decoding="async" onError={() => setBad(true)} /> : <span className="ini">{initials(p.name)}</span>}
     </span>
   )
 })
 
 export const FAvatar = memo(function FAvatar({ t, size = 56 }: { t: FTeam; size?: number }) {
   const [bad, setBad] = useState(false)
-  const initialsT = initials(t.name)
-  const isDefault = !!t.logo && !bad
+  const showImg = !!t.logo && !bad
   return (
-    <span className="avatar flogo" style={{ '--s': `${size}px`, '--tc': t.color } as any} role="img" aria-label={t.name} title={t.name}>
-      <span>{initialsT}</span>
-      {isDefault && <img src={t.logo!} alt="" width={size} height={size} loading="lazy" decoding="async" onError={() => setBad(true)} />}
+    <span className="avatar flogo" data-fb={showImg ? undefined : ''} style={{ '--s': `${size}px`, '--tc': t.color } as any} role="img" aria-label={t.name} title={t.name}>
+      {showImg ? <img src={t.logo!} alt="" width={size} height={size} loading="lazy" decoding="async" onError={() => setBad(true)} /> : <span className="ini">{initials(t.name)}</span>}
     </span>
   )
 })
@@ -125,7 +125,7 @@ export const PlayerRow = memo(function PlayerRow({ p, slot, moved, note, showAct
     <div className={cls} role="listitem" style={{ '--tc': p.color } as any}>
       <div className="who">
         {slot && <span className="slot">{slot}</span>}
-        <Avatar p={p} size={44} />
+        <button className="av-btn" aria-label={`Open ${p.name}`} onClick={(e) => openPlayer(p.id, e.currentTarget.querySelector('.avatar') as HTMLElement)}><Avatar p={p} size={44} /></button>
         <div style={{ minWidth: 0 }}>
           <div className="nm">{p.name}</div>
           <div className="sub"><Chip kind="pos">{p.pos}</Chip><NflTag abbr={p.team} /><StatusChip p={p} />
@@ -139,7 +139,7 @@ export const PlayerRow = memo(function PlayerRow({ p, slot, moved, note, showAct
       {showActual
         ? <div className="stat hide-sm"><b>{p.weekPts.toFixed(1)}</b><small>Actual</small></div>
         : <div className="stat hide-sm"><b>{valueLabel ?? p.actualPpg.toFixed(1)}</b><small>{valueLabel ? 'ROS pts' : 'Avg'}</small>{valuePct !== undefined && <div className="bar"><i style={{ width: `${Math.max(2, Math.min(100, valuePct))}%` }} /></div>}</div>}
-      <button className="iconbtn" aria-label={`Details for ${p.name}`} onClick={() => openPlayer(p.id)}><Icon n="chevron_right" /></button>
+      <button className="iconbtn" aria-label={`Details for ${p.name}`} onClick={(e) => openPlayer(p.id, (e.currentTarget.closest('.row')?.querySelector('.avatar') as HTMLElement) || null)}><Icon n="chevron_right" /></button>
     </div>
   )
 })

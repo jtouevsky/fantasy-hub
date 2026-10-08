@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApi, post, qc } from '../api'
-import { MetalButton } from '../fx'
+import { HeroButton } from '../fx'
 import { AskAI, Avatar, Chip, Empty, FAvatar, Icon, Notice, Section, Skel, NflTag, TagChips, useActions } from '../ui'
 
 const POS = ['QB', 'RB', 'WR', 'TE']
@@ -27,7 +27,7 @@ function Offer({ t, k }: { t: any; k: string }) {
   }
   const names = (a: any[]) => a.map((p) => p.name).join(' + ')
   return (
-    <>
+    <div className="offer-wrap">
       <article className="offer">
         <div className="ctxrow"><Chip kind="pos">{t.kind}</Chip><Chip kind={mk[0]} icon={mk[1]}>{t.verdictMeText}</Chip><Chip kind={mi[0]} icon={mi[1]}>{t.label[0].toUpperCase() + t.label.slice(1)} to accept</Chip>
           {t.confirmed && <Chip kind="good" icon="verified">Confirmed by manager</Chip>}{t.speculative && <Chip kind="warn" icon="bolt">Speculative</Chip>}</div>
@@ -47,15 +47,15 @@ function Offer({ t, k }: { t: any; k: string }) {
         <div className="todo" style={{ marginTop: 12, display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)' }}><Icon n="arrow_forward" /><span>Do this in the ESPN app: open {t.other.name}'s team and propose this trade.</span></div>
       </article>
       <div className="hero-actions">
-        <MetalButton icon="balance" label="Ask AI" size={52} onClick={() => askAI(`Evaluate this trade for me: I give ${names(t.give)} and get ${names(t.get)} from ${t.other.name}. Use evaluate_trade, answer 'should I offer it' and 'would they accept' separately, and show the offer ladder.`, 'Trade review')} />
-        <MetalButton icon="chat" label="Draft message" size={52} onClick={() => setPitchOpen(!pitchOpen)} />
-        <MetalButton icon="edit_note" label="Log answer" size={52} onClick={() => setLogOpen(!logOpen)} />
-        <MetalButton icon="bookmark_add" label="Save" size={52} onClick={async () => { await post('/api/recommendations', { kind: 'trade', summary: `${names(t.give)} for ${names(t.get)} (${t.other.name})`, details: { my_delta: t.myDelta, acceptance: t.label } }); toast('Saved to your recommendation log.') }} />
+        <HeroButton icon="balance" label="Ask AI" size={52} onClick={() => askAI(`Evaluate this trade for me: I give ${names(t.give)} and get ${names(t.get)} from ${t.other.name}. Use evaluate_trade, answer 'should I offer it' and 'would they accept' separately, and show the offer ladder.`, 'Trade review')} />
+        <HeroButton icon="chat" label="Draft message" size={52} onClick={() => setPitchOpen(!pitchOpen)} />
+        <HeroButton icon="edit_note" label="Log answer" size={52} onClick={() => setLogOpen(!logOpen)} />
+        <HeroButton icon="bookmark_add" label="Save" size={52} onClick={async () => { await post('/api/recommendations', { kind: 'trade', summary: `${names(t.give)} for ${names(t.get)} (${t.other.name})`, details: { my_delta: t.myDelta, acceptance: t.label } }); toast('Saved to your recommendation log.') }} />
       </div>
       {pitchOpen && <div className="field"><label>Pitch (edit, then send it yourself in ESPN). Nothing is sent automatically.</label><textarea rows={5} defaultValue={t.pitch} /></div>}
       {logOpen && <div className="form"><div className="field"><label>What did he say?</label><select value={resp} onChange={(e) => setResp(e.target.value)}>{['accepted', 'rejected', 'countered', 'no response'].map((x) => <option key={x}>{x}</option>)}</select></div>
         <div className="field"><label>Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. wants a RB back" /></div><button className="btn primary" onClick={save}><Icon n="check" /> Save</button></div>}
-    </>
+    </div>
   )
 }
 
@@ -100,8 +100,8 @@ function Find({ meta }: { meta: any }) {
   return (
     <>
       <div className="fresh" style={{ margin: '10px 0 6px' }}>Describe what you want in plain English, e.g. <i>find me a WR for the playoffs without giving up an RB, about 60/40</i>. I turn it into the settings below so you can correct anything before searching.</div>
-      <div style={{ display: 'flex', gap: 8 }}><input className="field" style={{ flex: 1, height: 42, borderRadius: 999, border: '1px solid var(--line-strong)', padding: '0 16px', background: 'var(--solid)' }} type="text" value={text} placeholder="e.g. sell high on my RB for a receiver; no QBs" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && read()} aria-label="Trade request" />
-        <MetalButton icon="auto_fix_high" label="Read it" onClick={read} size={46} /></div>
+      <div style={{ display: 'flex', gap: 8 }}><input className="big-in" style={{ flex: 1, borderRadius: 999 }} type="text" value={text} placeholder="e.g. sell high on my RB for a receiver; no QBs" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && read()} aria-label="Trade request" />
+        <HeroButton icon="auto_fix_high" label="Read it" onClick={read} size={46} /></div>
       {notes.length > 0 && <div className="ctxrow" style={{ marginTop: 8 }}><Chip icon="psychology">How I read that</Chip>{notes.map((n) => <Chip key={n}>{n}</Chip>)}</div>}
       <div className="form">
         <div className="field"><label>Trade with</label><select value={partner} onChange={(e) => setPartner(e.target.value === '' ? '' : Number(e.target.value))}><option value="">Anyone in the league</option>{others.map((t: any) => <option key={t.id} value={t.id}>{t.first ? `${t.first} · ` : ''}{t.name}</option>)}</select></div>
@@ -117,7 +117,7 @@ function Find({ meta }: { meta: any }) {
       <div className="ctxrow">{search.data?.constraints.map((x: string) => <Chip key={x}>{x}</Chip>)}</div>
       {search.isLoading ? <><Notice icon="hourglass_top">Scanning every team for the cheapest offer that works...</Notice><Skel n={2} h={200} /></> :
         !search.data?.results.length ? <Notice kind="warn" icon="search_off">No trade clears both questions (good for you AND plausible for him) under these settings. Loosen the split, drop a position filter, or allow a sell/rebuild move.</Notice> :
-          <><Section title={`${search.data.results.length} option${search.data.results.length !== 1 ? 's' : ''}`} aside="cheapest winning offer first" />{search.data.results.map((t: any, i: number) => <Offer key={i} t={t} k={`f${i}`} />)}</>}
+          <><Section title={`${search.data.results.length} option${search.data.results.length !== 1 ? 's' : ''}`} aside="cheapest winning offer first" /><div className="offers">{search.data.results.map((t: any, i: number) => <Offer key={i} t={t} k={`f${i}`} />)}</div></>}
     </>
   )
 }

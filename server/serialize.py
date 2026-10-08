@@ -43,7 +43,7 @@ def player(ctx: Ctx, p: PlayerInfo, slot: Optional[str] = None, detail: bool = F
         "opp": p.opponent, "kick": ui.kick_label(p), "lock": ui.lock_state(p), "owner": p.owner_team_id, "owned": p.percent_owned,
         "watch": p.player_id in ctx.watchlist, "color": nfl_color(ctx, p.pro_team), "tags": [list(t) for t in p.tags],
         "bye": p.bye_week or None,
-        "img": None if p.position == "D/ST" else {"s": assets.headshot_url(p.player_id, 120), "l": assets.headshot_url(p.player_id, 360)},
+        "img": None if p.position == "D/ST" else {"s": assets.headshot_url(p.player_id, 120), "m": assets.headshot_url(p.player_id, 240)},
     }
     st = p.stable
     if st:

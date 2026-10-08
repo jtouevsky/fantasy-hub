@@ -79,15 +79,18 @@ No credentials yet? Click **Explore with demo data** on the first screen to expl
 
 Everything is **read-only**. Each recommendation ends with what to do in the ESPN app.
 
-## Design system (v3)
+## Design system (v4)
 
-* **Geometry** - circles first: circular nav icons, avatars, badges and buttons; pills for controls; large-radius surfaces; projection **rings** on scores. Lists stay rows. A few squares, triangles and outlines (section markers, header shapes) add contrast.
-* **Each screen has its own identity on shared tokens** - Overview: a restrained "fluid illumination" scoreboard whose light follows the pointer. Matchup: a dark **split-flap** board (digits flip only when a number changes). My Team and Players: hairline rules, circular portraits, tight data. Trades: **liquid-metal** rim buttons (a chrome rim whose angle turns on hover/press) as the hero actions. Assistant: a glass **orb**, agent cards with confidence rings, a metal send button. News: a dither/ASCII header strip.
-* **Silver only** - metallic accents, no colored glows. Semantic colors (good/warn/bad) and each NFL team's own color stay. Light / Dark / System, optional accent team.
-* **Performance rules** - CSS before JS; effects react to hover, press or state change and never loop; `backdrop-filter` only on the sticky header and nav pill; no WebGL; everything has a static `prefers-reduced-motion` version. Numbers: [docs/performance.md](docs/performance.md).
-* **Brand data by stable IDs** - NFL names, colors and logos come from ESPN's public team directory (cached 30 days); headshots lazy-load from ESPN's CDN by player id, with initials as the fallback. Fantasy-team logos that need your cookies are fetched server-side (`/api/img/fteam/<id>`); cookies never reach the browser.
-* **Type** - Geist (UI), Barlow Semi Condensed (scores and names), tabular numerals, Geist Mono for flap digits.
-* Source: `web/src/styles.css` (tokens + base), `web/src/v3.css` (v3 language), `web/src/fx.tsx` (Ring, MetalButton, Orb, Flap, illumination), `web/src/ui.tsx`.
+Research, references and the full direction: [docs/ui-v4-moodboard.md](docs/ui-v4-moodboard.md). Polish audit with before/after screenshots: [docs/ui-v4-audit.md](docs/ui-v4-audit.md).
+
+* **Color-blocking** - a warm cream (or deep ink in dark mode) base with six flat, confident colors, one per section: cobalt (Overview, Assistant), lime (My Team), coral (Matchup), sunflower (Players), grape (Trades), teal (League). Each screen opens with a full-width color band. No glows, no gradients except the team-color backdrop behind portraits. Semantic colors (good, warning, bad) stay separate and always come with an icon or word; `python tools/contrast.py` checks every text pair for WCAG contrast in both modes.
+* **Shapes** - squircle cards and controls, stadium pills for filters, tilted outlined **stickers** for status, blob and rotated-square accents on the bands, big **rings** for projections, a blob mascot for the assistant. Chunky buttons with a hard offset shadow that spring up on hover and sink on press.
+* **Layout** - fluid and full width: a left rail (labels at 1360 px and up, icons only below), the content, and on wide screens a right panel that shows the open player (portrait morphs in from the list) or "Next up", quick questions for the assistant and the standings. Phones get a bottom nav; tablets a two-column layout.
+* **Type** - Barlow Condensed 800/700 for scores, names and headers; Geist for everything else; tabular numerals for stats. All fonts are self-hosted Latin subsets (about 80 KB in total, the display weights preloaded) and the icon font is subset to the glyphs the app uses.
+* **Motion** - springy press/hover (CSS `linear()` easing), number tickers on the scoreboards, View Transitions for page changes and the player-portrait morph, entrance stagger on the first load only, and short celebrations (a won week, a hit on the report card) that never block and end on any click or Esc. Only `transform` and `opacity` animate; nothing loops; there is no `backdrop-filter` and no animation library. `prefers-reduced-motion` gives calm static versions.
+* **Portraits** - the team-color circle is only a backdrop; initials appear solely when an image is missing or fails. Photos fill the circle (`object-fit: cover`, anchored near the top so heads are never cut), served at the rendered size.
+* **Brand data by stable IDs** - NFL names, colors and logos from ESPN's public team directory (cached 30 days); headshots from ESPN's CDN by player id. Fantasy-team logos that need your cookies are fetched server-side (`/api/img/fteam/<id>`); cookies never reach the browser.
+* Source: `web/src/styles.css` (tokens + components), `web/src/fx.tsx` (Ring, HeroButton, Ticker, Sticker, Mascot, Celebrate), `web/src/ui.tsx`, `web/src/App.tsx` (shell). `python -m tools.screens <dir>` captures every screen at 390/820/1440/1920 px in light and dark. `/dev/avatars` is a contact sheet of real headshots at every size.
 
 ### Known limits (need new data or backend work, so not faked)
 

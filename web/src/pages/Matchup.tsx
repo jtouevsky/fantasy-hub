@@ -1,6 +1,7 @@
 import { useApi } from '../api'
 import { AskAI, Avatar, Chip, Empty, GameEnv, NflTag, Notice, Section, Skel, StatusChip, TeamBadge } from '../ui'
 import { Scoreboard } from '../board'
+import { Celebrate, useOnce } from '../fx'
 import type { Player } from '../types'
 
 function Half({ p, right, win, started }: { p: Player | null; right: boolean; win: boolean; started: boolean }) {
@@ -18,11 +19,14 @@ function Half({ p, right, win, started }: { p: Player | null; right: boolean; wi
 
 export default function Matchup() {
   const { data: d, isLoading } = useApi<any>('/api/matchup')
+  const won = !!d?.scoreboard && d.scoreboard.state === 'Games complete' && d.scoreboard.myScore > d.scoreboard.oppScore
+  const [showWin, doneWin] = useOnce(`fh:win:${d?.scoreboard?.week}`)
   if (isLoading || !d) return <Skel n={4} h={80} />
   if (!d.scoreboard) return <Empty title="No matchup this week" body="Your team has a bye or the schedule hasn't loaded." icon="event_busy" />
   const s = d.scoreboard
   return (
     <>
+      {won && showWin && <Celebrate title={`You won week ${s.week}!`} sub={`${s.myScore.toFixed(1)} to ${s.oppScore.toFixed(1)}`} onDone={doneWin} />}
       <Scoreboard s={s} age={d.age} ttl={d.ttl} variant="flap" />
       {d.started && !d.demo && <Notice icon="sync">Scores update when you press <b>Refresh</b> (about every few minutes at most). This is not a live feed.</Notice>}
       <div className="ctxrow" style={{ marginTop: 14 }}><Chip icon="sports_football">{d.remainingA} of your starters yet to play</Chip><Chip icon="sports_football">{d.remainingB} of theirs yet to play</Chip></div>
