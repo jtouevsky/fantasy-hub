@@ -59,6 +59,10 @@ function Offer({ t, k }: { t: any; k: string }) {
   )
 }
 
+function PosPills({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
+  return <div className="field"><label>{label}</label><div className="pills" role="group" aria-label={label}>{POS.map((p) => <button type="button" key={p} aria-pressed={value.includes(p)} className={`pill ${value.includes(p) ? 'on' : ''}`} onClick={() => onChange(value.includes(p) ? value.filter((x) => x !== p) : [...value, p])}>{p}</button>)}</div></div>
+}
+
 function MultiSel({ label, options, value, onChange, placeholder }: { label: string; options: { v: any; l: string }[]; value: any[]; onChange: (v: any[]) => void; placeholder?: string }) {
   return (
     <div className="field"><label>{label}</label>
@@ -105,8 +109,8 @@ function Find({ meta }: { meta: any }) {
         <div className="field"><label>My-value split: {split}</label><input type="range" min={50} max={70} value={split} onChange={(e) => setSplit(Number(e.target.value))} aria-label="My-value split" /></div>
       </div>
       <div className="form">
-        <MultiSel label="Ask for" options={POS.map((p) => ({ v: p, l: p }))} value={want} onChange={setWant} placeholder="Any position" />
-        <MultiSel label="Won't give" options={POS.map((p) => ({ v: p, l: p }))} value={nogive} onChange={setNogive} placeholder="None" />
+        <PosPills label="Ask for (none = any)" value={want} onChange={setWant} />
+        <PosPills label="Won't give" value={nogive} onChange={setNogive} />
         <div className="field"><label>Must help my</label><select value={need} onChange={(e) => setNeed(e.target.value)}><option value="">No requirement</option>{POS.map((p) => <option key={p}>{p}</option>)}</select></div>
         <label className="toggle"><input type="checkbox" checked={loss} onChange={(e) => setLoss(e.target.checked)} /> Sell / rebuild (lineup may dip)</label>
       </div>

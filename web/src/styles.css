@@ -141,7 +141,7 @@ details.exp { margin: 4px 0 8px; } details.exp summary { cursor: pointer; font-s
 table.cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; } table.cmp td, table.cmp th { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; } .best { color: var(--good); font-weight: 700; }
 
 /* ---- trades ---- */
-.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 10px 0; align-items: end; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 10px 0; align-items: start; }
 .field label { display: block; font-size: 12px; color: var(--ink-3); margin-bottom: 4px; font-weight: 600; }
 .field select, .field input[type=text], .field input[type=number], .field textarea { width: 100%; min-height: 40px; border-radius: 14px; border: 1px solid var(--line-strong); background: var(--solid); padding: 6px 12px; }
 .field select[multiple] { min-height: 90px; }

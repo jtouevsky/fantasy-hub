@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { QueryClientProvider, useMutation } from '@tanstack/react-query'
 import { clearPersisted, post, prefetch, put, qc, useApi } from './api'
@@ -12,11 +12,10 @@ import Matchup from './pages/Matchup'
 import League from './pages/League'
 import Players from './pages/Players'
 import Assistant, { Msg } from './pages/Assistant'
+import Trades from './pages/Trades'
+import More from './pages/More'
+import PlayerSheet from './PlayerSheet'
 
-const loadTrades = () => import('./pages/Trades')
-const loadMore = () => import('./pages/More')
-const loadSheet = () => import('./PlayerSheet')
-const Trades = lazy(loadTrades), More = lazy(loadMore), PlayerSheet = lazy(loadSheet)
 
 const NAV: [string, string, string, string[]][] = [
   ['/', 'Overview', 'home', ['/api/overview']], ['/team', 'My Team', 'sports_football', ['/api/team']], ['/matchup', 'Matchup', 'scoreboard', ['/api/matchup']],
@@ -115,7 +114,7 @@ function Shell({ boot }: { boot: Boot }) {
   // warm every screen's data and code in the background so tab switches are instant
   useEffect(() => {
     const ric: any = (window as any).requestIdleCallback || ((f: () => void) => setTimeout(f, 300))
-    ric(() => { PRELOAD.forEach((p, i) => setTimeout(() => prefetch(p), i * 120)); setTimeout(() => { loadTrades(); loadMore(); loadSheet(); prefetch('/api/chat', 0); prefetch('/api/strategy') }, 900) })
+    ric(() => { PRELOAD.forEach((p, i) => setTimeout(() => prefetch(p), i * 120)); setTimeout(() => { prefetch('/api/chat', 0); prefetch('/api/strategy') }, 900) })
   }, [])
   useEffect(() => {                       // follow the OS in System mode
     const mq = matchMedia('(prefers-color-scheme: dark)')

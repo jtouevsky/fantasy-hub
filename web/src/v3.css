@@ -31,8 +31,9 @@
 
 /* ---- liquid metal button ---- */
 .metal { --s: 64px; display: inline-flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); font-size: 12px; font-weight: 600; }
-.metal-core { width: var(--s); height: var(--s); display: grid; place-items: center; position: relative; background: #12151a; color: #f1f3f6; box-shadow: 0 0 0 4px transparent; }
-.metal-core::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; background: var(--chrome); z-index: -1; transition: --a .7s var(--ease); }
+.metal-core { width: var(--s); height: var(--s); display: grid; place-items: center; position: relative; color: #f1f3f6; }
+.metal-core::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; background: var(--chrome); z-index: -2; transition: --a .7s var(--ease); }
+.metal-core::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 35% 28%, #2b313b, #0f1216 70%); z-index: -1; }
 .metal-core { isolation: isolate; margin: 4px; } .metal-core .ms { font-size: calc(var(--s) * .4); }
 .metal:hover .metal-core::before, .metal:focus-visible .metal-core::before { --a: 200deg; } .metal:active .metal-core::before { --a: 300deg; } .metal:active .metal-core { transform: scale(.96); }
 .metal:disabled { opacity: .5; cursor: default; } .metal-label { max-width: calc(var(--s) + 28px); text-align: center; }
@@ -99,3 +100,11 @@
   .flap-c { animation: none; } .metal-core::before, .nav a .ms, .board, [data-s=trades] .offer::before { transition: none; }
 }
 @media (hover: none) { .metal:hover .metal-core::before { --a: 0deg; } }
+
+@media (max-width: 700px) {
+  .board .ring-wrap { width: min(var(--s), 36vw); height: min(var(--s), 36vw); } .board .pair { gap: 8px; justify-content: center; } .board .big { font-size: 26px; } .board .legend { font-size: 9px; }
+  .nav { padding: 4px; gap: 0; width: 100%; justify-content: space-between; } .nav a { padding: 4px; } .nav a .ms { width: 30px; height: 30px; font-size: 18px; }
+  .board { padding: 14px 14px; } .board .side .name { font-size: 22px; }
+}
+
+.board .foot .chip { white-space: normal; text-align: center; }
