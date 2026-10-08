@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useApi, post, http, qc } from '../api'
 import { Chip, Icon, Notice, Empty, Skel } from '../ui'
 import { Markdown } from '../md'
+import { MetalButton, Orb, Ring } from '../fx'
 
 const EXAMPLES: [string, string][] = [
   ['Who should I start this week?', 'Who should I start this week and why?'],
@@ -16,7 +17,7 @@ export function MoveCards({ moves }: { moves: any }) {
   return (
     <>
       {moves.moves?.map((m: any, i: number) => (
-        <div key={i} className="mv"><div className="h"><b>Add {m.add}{m.drop ? `, drop ${m.drop}` : ''}</b><span className="num">{m.gain_this_week >= 0 ? '+' : ''}{m.gain_this_week} this week · {m.gain_rest_of_season >= 0 ? '+' : ''}{m.gain_rest_of_season} rest of season</span></div>
+        <div key={i} className="mv"><Ring value={{ high: 0.95, medium: 0.6, low: 0.3 }[m.confidence as string] ?? 0.5} size={44} label={`${m.confidence} confidence`}><span className="sr-only">{m.confidence}</span></Ring><div className="h"><b>Add {m.add}{m.drop ? `, drop ${m.drop}` : ''}</b><span className="num">{m.gain_this_week >= 0 ? '+' : ''}{m.gain_this_week} this week · {m.gain_rest_of_season >= 0 ? '+' : ''}{m.gain_rest_of_season} rest of season</span></div>
           <div className="ctxrow"><Chip kind={C[m.confidence][0]} icon={C[m.confidence][1]}>{m.confidence[0].toUpperCase() + m.confidence.slice(1)} confidence</Chip>{m.flags.includes('speculative') && <Chip kind="warn" icon="bolt">Speculative</Chip>}</div>
           <details className="exp"><summary>Why</summary><div>{m.reason}</div></details></div>))}
       {moves.streaming?.map((s: any, i: number) => <Notice key={i} kind={s.swap ? '' : 'good'} icon={s.swap ? 'autorenew' : 'check_circle'}><b>{s.swap ? `Stream ${s.position}: add ${s.best}${s.current ? `, drop ${s.current}` : ''}` : `Keep your current ${s.position} (${s.current})`}</b>. {s.reason}</Notice>)}
@@ -52,6 +53,7 @@ export default function Assistant() {
   const msgs = d.messages as any[]
   return (
     <>
+      <div className="asst-head"><Orb size={52} /><div><h2>Assistant</h2><small>Reads your league through tools. Read-only.</small></div></div>
       <div className="ctxrow"><Chip kind="ai" icon="auto_awesome">AI advice, not ESPN data</Chip>{d.chips.map((c: any) => <Chip key={c.text} icon={c.icon}>{c.text}</Chip>)}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
         <span className="fresh">Uses {d.backend !== 'api' ? 'your Claude subscription' : 'the Anthropic API'} · reads your league through tools · read-only</span>
@@ -65,7 +67,7 @@ export default function Assistant() {
       <div ref={end} style={{ height: 70 }} />
       <div className="chatbar"><form onSubmit={(e) => { e.preventDefault(); go(prompt) }}>
         <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask about your lineup, waivers, trades, injuries..." aria-label="Ask the assistant" />
-        <button className="btn primary icon" type="submit" aria-label="Send" disabled={send.isPending}><Icon n="arrow_upward" /></button></form></div>
+        <MetalButton icon="arrow_upward" label="" title="Send" type="submit" size={40} disabled={send.isPending} /></form></div>
     </>
   )
 }

@@ -45,3 +45,21 @@ How it is fast:
 * **Cheap rendering.** Client-side routing (no reloads). The free-agent list is virtualized (only visible rows exist in the DOM). Images are `loading="lazy"` at their displayed size, with initials as the failure fallback (no server-side image probing). `backdrop-filter` only on the sticky header and nav pill; no looping animations; rows use `contain: layout paint`.
 
 Reproduce: `make start`, then in the browser console time `document.querySelector('nav a').click()` against `performance.now()`; API timings with `curl -w '%{time_total}' localhost:8000/api/overview`.
+
+
+## After the UI overhaul (Part 3)
+
+Re-measured in the browser on the live league after adding rings, flaps, metal buttons and the new layouts. Every screen is now in the main bundle (no lazy chunks), so a first visit to any tab never shows a skeleton.
+
+| What | Time |
+|---|---|
+| Tab switch, click to content (14 switches across all 8 tabs) | **0.9 - 35 ms** (median ~5 ms); the slowest is the first render of the virtualized Players list |
+| Skeletons shown on a tab switch | 0 |
+| Main bundle | 416 KB (126 KB gzip), all screens included; CSS ~30 KB |
+| Elements with `backdrop-filter` | 2: the sticky header and the nav pill (small, fixed) |
+| CSS animations running while idle | **0** (checked with `document.getAnimations()`) |
+
+How the effects stay cheap:
+* **Rings** are one conic-gradient plus a radial mask; **chrome rims** are a conic-gradient whose angle (a registered `@property`) transitions only on hover or press; the **scoreboard light** moves with the pointer through two CSS variables (one `requestAnimationFrame` per move, only while hovering); **split-flap digits** run a single 240 ms flip, and only the digit that changed re-mounts. No WebGL or shaders anywhere, no looping animations, nothing animates offscreen.
+* `prefers-reduced-motion` turns the flips and transitions into static states.
+* Dither / ASCII texture is a mask and a text row on the News header only, never behind text.

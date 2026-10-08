@@ -1,9 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BrowserRouter, NavLink, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BrowserRouter, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { QueryClientProvider, useMutation } from '@tanstack/react-query'
 import { clearPersisted, post, prefetch, put, qc, useApi } from './api'
 import { ActionsCtx, BootCtx, Chip, FAvatar, Fresh, Icon, Modal, Notice, Skel, useActions } from './ui'
 import { Markdown } from './md'
+import { Shapes } from './fx'
 import type { Boot } from './types'
 import Overview from './pages/Overview'
 import Team from './pages/Team'
@@ -11,11 +12,10 @@ import Matchup from './pages/Matchup'
 import League from './pages/League'
 import Players from './pages/Players'
 import Assistant, { Msg } from './pages/Assistant'
+import Trades from './pages/Trades'
+import More from './pages/More'
+import PlayerSheet from './PlayerSheet'
 
-const loadTrades = () => import('./pages/Trades')
-const loadMore = () => import('./pages/More')
-const loadSheet = () => import('./PlayerSheet')
-const Trades = lazy(loadTrades), More = lazy(loadMore), PlayerSheet = lazy(loadSheet)
 
 const NAV: [string, string, string, string[]][] = [
   ['/', 'Overview', 'home', ['/api/overview']], ['/team', 'My Team', 'sports_football', ['/api/team']], ['/matchup', 'Matchup', 'scoreboard', ['/api/matchup']],
@@ -100,6 +100,7 @@ function Shell({ boot }: { boot: Boot }) {
   const [moreTab, setMoreTab] = useState('News')
   const [recents, setRecents] = useState<number[]>(() => { try { return JSON.parse(localStorage.getItem('fh:recents') || '[]') } catch { return [] } })
   const navigate = useNavigate()
+  const section = useLocation().pathname.split('/')[1] || 'overview'
   const playerId = params.get('p') ? Number(params.get('p')) : null
   const openPlayer = useCallback((id: number) => {
     setParams((p) => { p.set('p', String(id)); return p })
@@ -113,7 +114,7 @@ function Shell({ boot }: { boot: Boot }) {
   // warm every screen's data and code in the background so tab switches are instant
   useEffect(() => {
     const ric: any = (window as any).requestIdleCallback || ((f: () => void) => setTimeout(f, 300))
-    ric(() => { PRELOAD.forEach((p, i) => setTimeout(() => prefetch(p), i * 120)); setTimeout(() => { loadTrades(); loadMore(); loadSheet(); prefetch('/api/chat', 0); prefetch('/api/strategy') }, 900) })
+    ric(() => { PRELOAD.forEach((p, i) => setTimeout(() => prefetch(p), i * 120)); setTimeout(() => { prefetch('/api/chat', 0); prefetch('/api/strategy') }, 900) })
   }, [])
   useEffect(() => {                       // follow the OS in System mode
     const mq = matchMedia('(prefers-color-scheme: dark)')
@@ -132,7 +133,7 @@ function Shell({ boot }: { boot: Boot }) {
     <ActionsCtx.Provider value={actions}>
       <div className="wrap">
         <header className="top">
-          <div className="brand"><div className="mark"><Icon n="sports_football" /></div><div><b>Fantasy Hub</b><small>{L.name} · {L.year}</small></div></div>
+          <div className="brand"><div className="mark"><Icon n="sports_football" /></div><div><b>Fantasy Hub<Shapes /></b><small>{L.name} · {L.year}</small></div></div>
           <div className="grow" />
           <Search boot={boot} />
           <button className="btn" disabled={boot.demo || refresh.isPending} onClick={() => refresh.mutate()} title={boot.demo ? 'Demo data never changes.' : 'Fetch the latest from ESPN'}><Icon n="refresh" /> {refresh.isPending ? 'Refreshing' : 'Refresh'}</button>
@@ -144,7 +145,7 @@ function Shell({ boot }: { boot: Boot }) {
         <nav className="nav" aria-label="Main">{NAV.map(([to, label, ic, pre]) => (
           <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')} onMouseEnter={() => pre.forEach((p) => prefetch(p))} onFocus={() => pre.forEach((p) => prefetch(p))}><Icon n={ic} /> {label}</NavLink>))}</nav>
         {boot.warnings.map((w, i) => <Notice key={i} kind="warn" icon="warning">{w}</Notice>)}
-        <main>
+        <main data-s={section}>
           <Suspense fallback={<Skel n={4} h={80} />}>
             <Routes>
               <Route path="/" element={<Overview />} /><Route path="/team" element={<Team />} /><Route path="/matchup" element={<Matchup />} />

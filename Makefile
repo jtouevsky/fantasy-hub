@@ -22,3 +22,4 @@ start: build      ## one process: the API also serves the built frontend. Open h
 
 test:
 	$(PY) -m pytest -q
+	cd web && npx tsc --noEmit

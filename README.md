@@ -79,14 +79,15 @@ No credentials yet? Click **Explore with demo data** on the first screen to expl
 
 Everything is **read-only**. Each recommendation ends with what to do in the ESPN app.
 
-## Design system
+## Design system (v3)
 
-* **Light / Dark / System** (the slider icon top-right; remembered in the local database). Optional **accent team** tints selected states with an NFL team's color.
-* **Brand data by stable IDs** - NFL names, abbreviations, colors and logos come from ESPN's public team directory (cached 30 days); headshots come from ESPN's CDN by ESPN player id and lazy-load at their displayed size. A missing photo or logo becomes initials instead of a broken image. Defenses use team logos. Fantasy-team logos that need your ESPN cookies are fetched server-side and served from `/api/img/fteam/<id>`; the cookies never reach the browser.
-* **Fast by construction** - flat surfaces; `backdrop-filter` only on the small sticky header and nav pill, never on scrolling areas; no looping animations; skeleton loaders only on a cold first visit.
-* **Type** - Geist (UI), Barlow Semi Condensed (scores, team and player names), tabular numerals for every score and projection. Fonts load from Google Fonts; offline it falls back to system fonts.
-* **Responsive** - rows, scoreboards and trade cards restack on phones.
-* Source: `web/src/styles.css` (tokens + components), `web/src/ui.tsx` (shared components), `theme.py` (saved preferences), `assets.py`.
+* **Geometry** - circles first: circular nav icons, avatars, badges and buttons; pills for controls; large-radius surfaces; projection **rings** on scores. Lists stay rows. A few squares, triangles and outlines (section markers, header shapes) add contrast.
+* **Each screen has its own identity on shared tokens** - Overview: a restrained "fluid illumination" scoreboard whose light follows the pointer. Matchup: a dark **split-flap** board (digits flip only when a number changes). My Team and Players: hairline rules, circular portraits, tight data. Trades: **liquid-metal** rim buttons (a chrome rim whose angle turns on hover/press) as the hero actions. Assistant: a glass **orb**, agent cards with confidence rings, a metal send button. News: a dither/ASCII header strip.
+* **Silver only** - metallic accents, no colored glows. Semantic colors (good/warn/bad) and each NFL team's own color stay. Light / Dark / System, optional accent team.
+* **Performance rules** - CSS before JS; effects react to hover, press or state change and never loop; `backdrop-filter` only on the sticky header and nav pill; no WebGL; everything has a static `prefers-reduced-motion` version. Numbers: [docs/performance.md](docs/performance.md).
+* **Brand data by stable IDs** - NFL names, colors and logos come from ESPN's public team directory (cached 30 days); headshots lazy-load from ESPN's CDN by player id, with initials as the fallback. Fantasy-team logos that need your cookies are fetched server-side (`/api/img/fteam/<id>`); cookies never reach the browser.
+* **Type** - Geist (UI), Barlow Semi Condensed (scores and names), tabular numerals, Geist Mono for flap digits.
+* Source: `web/src/styles.css` (tokens + base), `web/src/v3.css` (v3 language), `web/src/fx.tsx` (Ring, MetalButton, Orb, Flap, illumination), `web/src/ui.tsx`.
 
 ### Known limits (need new data or backend work, so not faked)
 

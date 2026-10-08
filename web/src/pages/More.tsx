@@ -8,6 +8,7 @@ function News() {
   if (!d.available) return <Empty title="News isn't available in demo mode" body="Connect your league to see ESPN and Sleeper news." icon="newspaper" />
   return (
     <>
+      <div className="dither ascii" aria-hidden="true">{'░▒▓█▓▒░ NEWS ░▒▓█▓▒░ '.repeat(8)}</div>
       <Section title="Lineup alerts" aside="things that should change this week's lineup" />
       {d.alerts.length === 0 && <Notice kind="good" icon="check_circle">Nothing in the news should change your lineup this week.</Notice>}
       {d.alerts.map((a: any, i: number) => <Notice key={i} kind={{ ACT: 'bad', WATCH: 'warn', INFO: '' }[a.sev as string] || ''} icon={{ ACT: 'error', WATCH: 'visibility', INFO: 'info' }[a.sev as string] || 'info'}><b>{a.sev[0] + a.sev.slice(1).toLowerCase()}</b> · {a.who && `${a.who}: `}{a.msg}{a.action && <div className="fresh">{a.action}</div>}</Notice>)}

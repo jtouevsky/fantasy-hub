@@ -1,5 +1,6 @@
 import { useApi } from '../api'
-import { AskAI, Avatar, Chip, Empty, GameEnv, NflTag, Notice, Scoreboard, Section, Skel, StatusChip, TeamBadge } from '../ui'
+import { AskAI, Avatar, Chip, Empty, GameEnv, NflTag, Notice, Section, Skel, StatusChip, TeamBadge } from '../ui'
+import { Scoreboard } from '../board'
 import type { Player } from '../types'
 
 function Half({ p, right, win, started }: { p: Player | null; right: boolean; win: boolean; started: boolean }) {
@@ -22,7 +23,7 @@ export default function Matchup() {
   const s = d.scoreboard
   return (
     <>
-      <Scoreboard s={s} age={d.age} ttl={d.ttl} />
+      <Scoreboard s={s} age={d.age} ttl={d.ttl} variant="flap" />
       {d.started && !d.demo && <Notice icon="sync">Scores update when you press <b>Refresh</b> (about every few minutes at most). This is not a live feed.</Notice>}
       <div className="ctxrow" style={{ marginTop: 14 }}><Chip icon="sports_football">{d.remainingA} of your starters yet to play</Chip><Chip icon="sports_football">{d.remainingB} of theirs yet to play</Chip></div>
       {d.envs.length > 0 && <><Section title="Game environment" aside="Vegas lines + forecast, as of the last refresh" />
