@@ -226,23 +226,6 @@ export function AskAI({ label, prompt, title, icon = 'auto_awesome' }: { label: 
   return <button className="btn sm" onClick={() => askAI(prompt, title)} title="Opens an AI review. It only reads your league and never makes changes."><Icon n={icon} /> {label}</button>
 }
 
-export function Scoreboard({ s, age, ttl }: { s: any; age: number | null; ttl: number }) {
-  const fav = s.myProj - s.oppProj
-  const started = s.state !== 'Pregame'
-  const text = fav > 0.05 ? `${s.me.name} favored by ${fav.toFixed(1)} (projection)` : fav < -0.05 ? `${s.opp.name} favored by ${(-fav).toFixed(1)} (projection)` : 'Projected dead even'
-  const side = (t: FTeam, r: boolean) => (
-    <div className={`side ${r ? 'r' : ''}`}><FAvatar t={t} size={64} /><div style={{ minWidth: 0 }}><div className="name">{t.name}</div><div className="sub">{t.owner} · {t.record} · #{t.standing}</div></div></div>
-  )
-  const score = (proj: number, act: number) => <div className="p"><span className="legend">Projected</span><span className="big num">{proj.toFixed(1)}</span>{started && <div className="actual num">Actual {act.toFixed(1)}</div>}</div>
-  return (
-    <section className="board" aria-label={`Week ${s.week} matchup`}>
-      <div className="meta"><span>Week {s.week} · {s.state}</span><span><Fresh age={age} ttl={ttl} /></span></div>
-      <div className="grid">{side(s.me, false)}<div className="pair">{score(s.myProj, s.myScore)}<span className="sep">–</span>{score(s.oppProj, s.oppScore)}</div>{side(s.opp, true)}</div>
-      <div className="foot"><Chip kind="info" icon="insights">{text}</Chip><Chip icon="info">ESPN projections, not a win-probability model</Chip></div>
-    </section>
-  )
-}
-
 export function Modal({ onClose, title, children }: { onClose: () => void; title: string; children: ReactNode }) {
   return (
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }} role="dialog" aria-modal="true" aria-label={title}>

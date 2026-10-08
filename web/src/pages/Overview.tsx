@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useApi, post, qc } from '../api'
-import { AskAI, Avatar, Chip, Empty, FAvatar, Icon, MovesBlock, NewsEvent, Notice, RecCard, Scoreboard, Section, Skel, useActions } from '../ui'
+import { Ring } from '../fx'
+import { AskAI, Avatar, Chip, Empty, FAvatar, Icon, MovesBlock, NewsEvent, Notice, RecCard, Section, Skel, useActions } from '../ui'
+import { Scoreboard } from '../board'
 import type { FTeam, Player } from '../types'
 
 export default function Overview() {
@@ -58,7 +60,7 @@ export default function Overview() {
           {d.top.length === 0 ? <Empty title="No starters set" icon="groups" /> : d.top.map((p: Player) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0' }}><Avatar p={p} size={40} />
               <div style={{ minWidth: 0 }}><div className="nm">{p.name}</div><div className="fresh">{p.pos} · {p.opp ? `vs ${p.opp}` : 'Bye'}</div></div>
-              <div className="kpi" style={{ marginLeft: 'auto', minWidth: 0, padding: '4px 12px' }}><b>{p.proj.toFixed(1)}</b><small>Proj</small></div></div>))}
+              <span style={{ marginLeft: 'auto' }}><Ring value={Math.min(p.proj / 30, 1)} size={52} label={`${p.proj.toFixed(1)} projected`}><span className="num" style={{ fontWeight: 700, fontSize: 14 }}>{p.proj.toFixed(1)}</span></Ring></span></div>))}
           <div className="actions"><AskAI label="Review my whole lineup" prompt="Review my lineup for this week: who to start and sit and why." title="Lineup review" icon="fact_check" /></div>
         </div>
       </div>
