@@ -22,4 +22,5 @@ start: build      ## one process: the API also serves the built frontend. Open h
 
 test:
 	$(PY) -m pytest -q
+	$(PY) tools/contrast.py > /dev/null
 	cd web && npx tsc --noEmit
