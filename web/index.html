@@ -6,13 +6,12 @@
     <meta name="color-scheme" content="light dark" />
     <title>Fantasy Hub</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23222'/%3E%3Cellipse cx='32' cy='32' rx='20' ry='12' transform='rotate(-35 32 32)' fill='none' stroke='%23ddd' stroke-width='4'/%3E%3C/svg%3E" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=block" />
+    <link rel="preload" href="/fonts/BarlowCondensed-800.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/BarlowCondensed-700.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/Geist-var.woff2" as="font" type="font/woff2" crossorigin />
     <script>
       // apply the saved theme before first paint so there is never a light/dark flash
-      try { var m = localStorage.getItem('fh:mode') || 'System'; var d = m === 'Dark' || (m === 'System' && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = d ? 'dark' : 'light'; } catch (e) {}
+      try { var q = new URLSearchParams(location.search).get('theme'); if (q) sessionStorage.setItem('fh:force', q); var m = sessionStorage.getItem('fh:force') || localStorage.getItem('fh:mode') || 'System'; m = m.charAt(0).toUpperCase() + m.slice(1); var d = m === 'Dark' || (m === 'System' && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = d ? 'dark' : 'light'; } catch (e) {}
     </script>
   </head>
   <body>

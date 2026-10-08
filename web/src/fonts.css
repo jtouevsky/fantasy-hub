@@ -1,0 +1,6 @@
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/Geist-var.woff2') format('woff2'); }
+/* Self-hosted Latin subsets (no third-party font requests at runtime). Display weights are preloaded in index.html. */
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/BarlowCondensed-700.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 800; font-display: swap; src: url('/fonts/BarlowCondensed-800.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/GeistMono-500.woff2') format('woff2'); }
+@font-face { font-family: 'Material Symbols Rounded'; font-style: normal; font-weight: 400; font-display: block; src: url('/fonts/MaterialSymbols-subset.woff2') format('woff2'); }

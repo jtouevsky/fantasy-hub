@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useApi, post, http, qc } from '../api'
 import { Chip, Icon, Notice, Empty, Skel } from '../ui'
 import { Markdown } from '../md'
-import { MetalButton, Orb, Ring } from '../fx'
+import { HeroButton, Mascot, Ring } from '../fx'
 
 const EXAMPLES: [string, string][] = [
   ['Who should I start this week?', 'Who should I start this week and why?'],
@@ -53,7 +53,7 @@ export default function Assistant() {
   const msgs = d.messages as any[]
   return (
     <>
-      <div className="asst-head"><Orb size={52} /><div><h2>Assistant</h2><small>Reads your league through tools. Read-only.</small></div></div>
+      <div className="asst-head"><Mascot size={64} /><div><h2>Assistant</h2><small>Reads your league through tools. Read-only.</small></div></div>
       <div className="ctxrow"><Chip kind="ai" icon="auto_awesome">AI advice, not ESPN data</Chip>{d.chips.map((c: any) => <Chip key={c.text} icon={c.icon}>{c.text}</Chip>)}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
         <span className="fresh">Uses {d.backend !== 'api' ? 'your Claude subscription' : 'the Anthropic API'} · reads your league through tools · read-only</span>
@@ -67,7 +67,7 @@ export default function Assistant() {
       <div ref={end} style={{ height: 70 }} />
       <div className="chatbar"><form onSubmit={(e) => { e.preventDefault(); go(prompt) }}>
         <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask about your lineup, waivers, trades, injuries..." aria-label="Ask the assistant" />
-        <MetalButton icon="arrow_upward" label="" title="Send" type="submit" size={40} disabled={send.isPending} /></form></div>
+        <HeroButton icon="arrow_upward" title="Send" type="submit" size={44} disabled={send.isPending} /></form></div>
     </>
   )
 }

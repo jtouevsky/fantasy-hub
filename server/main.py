@@ -54,7 +54,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Fantasy Hub API", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
-DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")
+DIST = os.environ.get("FH_DIST") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")
 
 
 def get() -> cx.Ctx:

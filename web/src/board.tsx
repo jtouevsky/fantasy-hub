@@ -1,5 +1,5 @@
 import { Chip, FAvatar, Fresh } from './ui'
-import { Flap, Ring, useIllumination } from './fx'
+import { Ring, Ticker, useIllumination } from './fx'
 import type { FTeam } from './types'
 
 /** Weekly matchup scoreboard. Overview: fluid-illumination surface with a projection-share ring per side. Matchup: split-flap digits that flip only when a number changes. */
@@ -13,9 +13,9 @@ export function Scoreboard({ s, age, ttl, variant = 'ring' }: { s: any; age: num
     <div className={`side ${r ? 'r' : ''}`}><FAvatar t={t} size={72} /><div style={{ minWidth: 0 }}><div className="name">{t.name}</div><div className="sub">{t.owner} · {t.record} · #{t.standing}</div></div></div>
   )
   const score = (proj: number, act: number, share: number, who: string) => variant === 'flap'
-    ? <div className="p"><span className="legend">Projected</span><span className="big"><Flap text={proj.toFixed(1)} label={`${who} projected ${proj.toFixed(1)}`} /></span>{started && <div className="actual num">Actual <Flap text={act.toFixed(1)} /></div>}</div>
+    ? <div className="p"><span className="legend">Projected</span><span className="big"><Ticker value={proj.toFixed(1)} /></span>{started && <div className="actual num">Actual <Ticker value={act.toFixed(1)} /></div>}</div>
     : <div className="p"><Ring value={share} size={150} label={`${who} holds ${Math.round(share * 100)}% of the combined projection`}>
-        <span><span className="legend">Projected</span><span className="big num">{proj.toFixed(1)}</span>{started && <div className="actual num">Actual {act.toFixed(1)}</div>}</span></Ring></div>
+        <span><span className="legend">Projected</span><span className="big"><Ticker value={proj.toFixed(1)} /></span>{started && <div className="actual num">Actual <Ticker value={act.toFixed(1)} /></div>}</span></Ring></div>
   return (
     <section className="board" aria-label={`Week ${s.week} matchup`} ref={ill.ref as any} onPointerMove={ill.onPointerMove}>
       <div className="meta"><span>Week {s.week} · {s.state}</span><span><Fresh age={age} ttl={ttl} /></span></div>

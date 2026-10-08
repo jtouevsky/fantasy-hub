@@ -1,10 +1,12 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { BrowserRouter, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { QueryClientProvider, useMutation } from '@tanstack/react-query'
 import { clearPersisted, post, prefetch, put, qc, useApi } from './api'
-import { ActionsCtx, BootCtx, Chip, FAvatar, Fresh, Icon, Modal, Notice, Skel, useActions } from './ui'
+import { ActionsCtx, BootCtx, FAvatar, Fresh, Icon, Modal, Notice, Skel, useActions } from './ui'
 import { Markdown } from './md'
-import { Shapes } from './fx'
+import { Sticker } from './fx'
+import ContextPanel from './Panel'
 import type { Boot } from './types'
 import Overview from './pages/Overview'
 import Team from './pages/Team'
@@ -25,9 +27,10 @@ const NAV: [string, string, string, string[]][] = [
 const PRELOAD = ['/api/overview', '/api/team', '/api/matchup', '/api/players', '/api/league', '/api/trades/meta']
 
 function applyMode(mode: string) {
+  try { const f = sessionStorage.getItem('fh:force'); if (f) mode = f.charAt(0).toUpperCase() + f.slice(1) } catch { /* ignore */ }
   const dark = mode === 'Dark' || (mode === 'System' && matchMedia('(prefers-color-scheme: dark)').matches)
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-  try { localStorage.setItem('fh:mode', mode) } catch { /* ignore */ }
+  try { if (!sessionStorage.getItem('fh:force')) localStorage.setItem('fh:mode', mode) } catch { /* ignore */ }
 }
 
 function Search({ boot }: { boot: Boot }) {
@@ -93,6 +96,51 @@ function AISheet({ req, onClose }: { req: { prompt: string; title: string }; onC
   )
 }
 
+const TITLES: Record<string, [string, string]> = {
+  overview: ['This week', 'Your hub'], team: ['My team', 'Lineup, bench and IR'], matchup: ['Matchup', 'Head to head'], players: ['Players', 'Waivers and free agents'],
+  trades: ['Trades', 'Find, evaluate, negotiate'], league: ['League', 'Standings and the slate'], assistant: ['Assistant', 'Ask anything, read-only'], more: ['More', 'News, strategy, report card'],
+}
+
+function useMedia(q: string) {
+  const [m, setM] = useState(() => matchMedia(q).matches)
+  useEffect(() => { const mq = matchMedia(q); const f = () => setM(mq.matches); mq.addEventListener('change', f); f(); return () => mq.removeEventListener('change', f) }, [q])
+  return m
+}
+
+/** Run a UI change inside a View Transition when the browser supports it (cross-fade + the shared portrait morph); otherwise just run it. */
+export function withTransition(fn: () => void, origin?: HTMLElement | null) {
+  const d: any = document
+  if (!d.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) { fn(); return }
+  if (origin) origin.style.viewTransitionName = 'pimg'
+  d.startViewTransition(() => { flushSync(fn); if (origin) origin.style.viewTransitionName = '' })
+}
+
+function RailLink({ to, label, ic, pre }: { to: string; label: string; ic: string; pre: string[] }) {
+  const navigate = useNavigate()
+  const loc = useLocation()
+  return (
+    <NavLink to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')} onMouseEnter={() => pre.forEach((p) => prefetch(p))} onFocus={() => pre.forEach((p) => prefetch(p))}
+      onClick={(e) => { if (e.metaKey || e.ctrlKey || loc.pathname === to) return; e.preventDefault(); withTransition(() => navigate(to)) }} aria-label={label}>
+      <span className="ni"><Icon n={ic} /></span><span className="nl">{label}</span>
+    </NavLink>
+  )
+}
+
+function BottomNav() {
+  const [more, setMore] = useState(false)
+  const navigate = useNavigate()
+  const loc = useLocation()
+  const go = (to: string) => { setMore(false); if (loc.pathname !== to) withTransition(() => navigate(to)) }
+  const main = NAV.slice(0, 5), rest = NAV.slice(5)
+  return (
+    <nav className="bottomnav" aria-label="Main">
+      {main.map(([to, label, ic]) => <button key={to} className={loc.pathname === to ? 'on' : ''} onClick={() => go(to)} aria-label={label}><span className="ni"><Icon n={ic} /></span><span className="nl">{label.replace('My Team', 'Team')}</span></button>)}
+      <button className={rest.some(([to]) => loc.pathname === to) ? 'on' : ''} onClick={() => setMore(!more)} aria-expanded={more} aria-label="More screens"><span className="ni"><Icon n="more_horiz" /></span><span className="nl">More</span></button>
+      {more && <div className="bn-pop" role="menu">{rest.map(([to, label, ic]) => <button key={to} role="menuitem" onClick={() => go(to)}><Icon n={ic} /> {label}</button>)}</div>}
+    </nav>
+  )
+}
+
 function Shell({ boot }: { boot: Boot }) {
   const [params, setParams] = useSearchParams()
   const [ai, setAi] = useState<{ prompt: string; title: string } | null>(null)
@@ -101,20 +149,23 @@ function Shell({ boot }: { boot: Boot }) {
   const [recents, setRecents] = useState<number[]>(() => { try { return JSON.parse(localStorage.getItem('fh:recents') || '[]') } catch { return [] } })
   const navigate = useNavigate()
   const section = useLocation().pathname.split('/')[1] || 'overview'
+  const wide = useMedia('(min-width: 1360px)')
   const playerId = params.get('p') ? Number(params.get('p')) : null
-  const openPlayer = useCallback((id: number) => {
-    setParams((p) => { p.set('p', String(id)); return p })
+  const openPlayer = useCallback((id: number, origin?: HTMLElement | null) => {
+    withTransition(() => setParams((p) => { p.set('p', String(id)); return p }), origin)
     setRecents((r) => { const n = [id, ...r.filter((x) => x !== id)].slice(0, 6); try { localStorage.setItem('fh:recents', JSON.stringify(n)) } catch { /* ignore */ } return n })
   }, [setParams])
-  const closePlayer = () => setParams((p) => { p.delete('p'); return p })
+  const closePlayer = () => withTransition(() => setParams((p) => { p.delete('p'); return p }))
   const toast = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }, [])
   const actions = useMemo(() => ({ openPlayer, askAI: (prompt: string, title: string) => setAi({ prompt, title }), toast }), [openPlayer, toast])
   const refresh = useMutation({ mutationFn: () => post('/api/refresh'), onSuccess: () => { clearPersisted(); qc.invalidateQueries(); toast('Refreshed from ESPN') } })
 
-  // warm every screen's data and code in the background so tab switches are instant
+  // warm every screen's data in the background so tab switches are instant
   useEffect(() => {
     const ric: any = (window as any).requestIdleCallback || ((f: () => void) => setTimeout(f, 300))
     ric(() => { PRELOAD.forEach((p, i) => setTimeout(() => prefetch(p), i * 120)); setTimeout(() => { prefetch('/api/chat', 0); prefetch('/api/strategy') }, 900) })
+    const t = setTimeout(() => { delete document.documentElement.dataset.boot }, 1800)     // entrance stagger plays on the first load only
+    return () => clearTimeout(t)
   }, [])
   useEffect(() => {                       // follow the OS in System mode
     const mq = matchMedia('(prefers-color-scheme: dark)')
@@ -129,35 +180,47 @@ function Shell({ boot }: { boot: Boot }) {
   }, [boot.accent, boot.accentInk])
 
   const L = boot.league
+  const [title, sub] = TITLES[section] || TITLES.overview
   return (
     <ActionsCtx.Provider value={actions}>
-      <div className="wrap">
-        <header className="top">
-          <div className="brand"><div className="mark"><Icon n="sports_football" /></div><div><b>Fantasy Hub<Shapes /></b><small>{L.name} · {L.year}</small></div></div>
-          <div className="grow" />
-          <Search boot={boot} />
-          <button className="btn" disabled={boot.demo || refresh.isPending} onClick={() => refresh.mutate()} title={boot.demo ? 'Demo data never changes.' : 'Fetch the latest from ESPN'}><Icon n="refresh" /> {refresh.isPending ? 'Refreshing' : 'Refresh'}</button>
-          <Appearance boot={boot} />
-        </header>
-        <div className="ctxrow"><Chip kind="info" icon="calendar_month">Week {L.week}</Chip><span className="chip"><FAvatar t={boot.me} size={22} />{boot.me.name}</span><Chip icon="sports_score">{boot.me.record}</Chip>
-          {boot.demo && <Chip kind="warn" icon="science">Demo data</Chip>}{!boot.demo && <Fresh age={boot.age} ttl={boot.ttl} />}</div>
-        {recents.length > 0 && <div className="ctxrow" style={{ marginTop: 6 }}><span className="fresh">Recent</span>{recents.map((id) => { const s = boot.search.find((x) => x.id === id); return s ? <button key={id} className="pill" onClick={() => openPlayer(id)}><Icon n="history" /> {s.pos === 'D/ST' ? s.name.split(' ')[0] : s.name.split(' ').slice(-1)[0]}</button> : null })}</div>}
-        <nav className="nav" aria-label="Main">{NAV.map(([to, label, ic, pre]) => (
-          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')} onMouseEnter={() => pre.forEach((p) => prefetch(p))} onFocus={() => pre.forEach((p) => prefetch(p))}><Icon n={ic} /> {label}</NavLink>))}</nav>
-        {boot.warnings.map((w, i) => <Notice key={i} kind="warn" icon="warning">{w}</Notice>)}
-        <main data-s={section}>
-          <Suspense fallback={<Skel n={4} h={80} />}>
-            <Routes>
-              <Route path="/" element={<Overview />} /><Route path="/team" element={<Team />} /><Route path="/matchup" element={<Matchup />} />
-              <Route path="/players" element={<Players />} /><Route path="/trades" element={<Trades />} /><Route path="/league" element={<League />} />
-              <Route path="/assistant" element={<Assistant />} /><Route path="/more" element={<More tab={moreTab} setTab={setMoreTab} />} />
-              <Route path="*" element={<Notice icon="explore_off">That page doesn't exist. <button className="btn sm" onClick={() => navigate('/')}>Go to Overview</button></Notice>} />
-            </Routes>
-          </Suspense>
-        </main>
-        {boot.demo && <div className="actions" style={{ marginTop: 20 }}><button className="btn" onClick={async () => { await post('/api/demo', { on: false }); clearPersisted(); qc.invalidateQueries() }}><Icon n="logout" /> Exit demo</button></div>}
+      <div className="app" data-s={section} data-panel={wide ? 'on' : 'off'}>
+        <aside className="rail">
+          <div className="brand"><div className="mark"><Icon n="sports_football" /></div><div className="bt"><b>Fantasy Hub</b><small>{L.name} · {L.year}</small></div></div>
+          <nav className="nav" aria-label="Main">{NAV.map(([to, label, ic, pre]) => <RailLink key={to} to={to} label={label} ic={ic} pre={pre} />)}</nav>
+          <div className="rail-foot"><FAvatar t={boot.me} size={36} /><div className="rf-t"><b>{boot.me.name}</b><small>{boot.me.record} · #{boot.me.standing}</small></div></div>
+        </aside>
+        <div className="stage">
+          <header className="topbar">
+            <div className="brand sm"><div className="mark"><Icon n="sports_football" /></div><b>Fantasy Hub</b></div>
+            <Search boot={boot} />
+            <div className="grow" />
+            <button className="btn" disabled={boot.demo || refresh.isPending} onClick={() => refresh.mutate()} title={boot.demo ? 'Demo data never changes.' : 'Fetch the latest from ESPN'}><Icon n="refresh" /> <span className="hide-xs">{refresh.isPending ? 'Refreshing' : 'Refresh'}</span></button>
+            <Appearance boot={boot} />
+          </header>
+          <div className="band"><div className="band-in">
+            <div><h1>{title}</h1><span className="band-sub">{sub}</span></div>
+            <div className="band-chips"><Sticker tone="ink" tilt={-3}>Week {L.week}</Sticker>{boot.demo && <Sticker tone="warn" tilt={2} icon="science">Demo data</Sticker>}{!boot.demo && <Fresh age={boot.age} ttl={boot.ttl} />}</div>
+          </div></div>
+          <div className="content-wrap">
+            {recents.length > 0 && <div className="ctxrow recents"><span className="fresh">Recent</span>{recents.map((id) => { const s = boot.search.find((x) => x.id === id); return s ? <button key={id} className="pill" onClick={(e) => openPlayer(id, e.currentTarget)}><Icon n="history" /> {s.pos === 'D/ST' ? s.name.split(' ')[0] : s.name.split(' ').slice(-1)[0]}</button> : null })}</div>}
+            {boot.warnings.map((w, i) => <Notice key={i} kind="warn" icon="warning">{w}</Notice>)}
+            <main className="content" data-s={section}>
+              <Suspense fallback={<Skel n={4} h={80} />}>
+                <Routes>
+                  <Route path="/" element={<Overview />} /><Route path="/team" element={<Team />} /><Route path="/matchup" element={<Matchup />} />
+                  <Route path="/players" element={<Players />} /><Route path="/trades" element={<Trades />} /><Route path="/league" element={<League />} />
+                  <Route path="/assistant" element={<Assistant />} /><Route path="/more" element={<More tab={moreTab} setTab={setMoreTab} />} />
+                  <Route path="*" element={<Notice icon="explore_off">That page doesn't exist. <button className="btn sm" onClick={() => navigate('/')}>Go to Overview</button></Notice>} />
+                </Routes>
+              </Suspense>
+            </main>
+            {boot.demo && <div className="actions" style={{ marginTop: 20 }}><button className="btn" onClick={async () => { await post('/api/demo', { on: false }); clearPersisted(); qc.invalidateQueries() }}><Icon n="logout" /> Exit demo</button></div>}
+          </div>
+        </div>
+        {wide && <aside className="panel" aria-label="Details">{playerId ? <PlayerSheet id={playerId} onClose={closePlayer} embedded /> : <ContextPanel />}</aside>}
+        <BottomNav />
       </div>
-      {playerId && <Suspense fallback={null}><PlayerSheet id={playerId} onClose={closePlayer} /></Suspense>}
+      {!wide && playerId && <PlayerSheet id={playerId} onClose={closePlayer} />}
       {ai && <AISheet req={ai} onClose={() => setAi(null)} />}
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
     </ActionsCtx.Provider>
@@ -167,8 +230,8 @@ function Shell({ boot }: { boot: Boot }) {
 function Setup({ boot }: { boot: Boot }) {
   const s = boot.setup!
   return (
-    <div className="wrap">
-      <div className="brand"><div className="mark"><Icon n="sports_football" /></div><div><b>Fantasy Hub</b><small>Your weekly team manager</small></div></div>
+    <div className="setup">
+      <div className="brand"><div className="mark"><Icon n="sports_football" /></div><div className="bt"><b>Fantasy Hub</b><small>Your weekly team manager</small></div></div>
       <div style={{ marginTop: 20 }} className="empty"><Icon n="link_off" /><b>{s.problem ? "Couldn't reach your league" : 'Connect your league'}</b>
         {s.problem || `Add ${(s.missing || []).join(', ')} to the .env file (see the README), then restart.`}</div>
       <div className="actions" style={{ marginTop: 14 }}>
@@ -182,8 +245,8 @@ function Gate() {
   const { data: boot, isLoading, error } = useApi<Boot>('/api/bootstrap', { stale: 60_000 })
   const seen = useRef(boot?.version)
   useEffect(() => { if (boot && seen.current !== undefined && boot.version !== seen.current) { clearPersisted(); qc.invalidateQueries() } seen.current = boot?.version }, [boot?.version])   // eslint-disable-line
-  if (isLoading && !boot) return <div className="wrap"><Skel n={3} h={90} /></div>
-  if (error && !boot) return <div className="wrap"><Notice kind="bad" icon="error">Can't reach the Fantasy Hub server. Start it with <code>make dev</code>. ({(error as Error).message})</Notice></div>
+  if (isLoading && !boot) return <div className="setup"><Skel n={3} h={90} /></div>
+  if (error && !boot) return <div className="setup"><Notice kind="bad" icon="error">Can't reach the Fantasy Hub server. Start it with <code>make dev</code>. ({(error as Error).message})</Notice></div>
   if (!boot) return null
   return <BootCtx.Provider value={boot}>{boot.setup ? <Setup boot={boot} /> : <Shell boot={boot} />}</BootCtx.Provider>
 }
