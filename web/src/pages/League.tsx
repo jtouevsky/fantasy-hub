@@ -9,7 +9,7 @@ export default function League() {
       <Section title="Standings" aside={`${d.count} teams · ${d.regWeeks}-game regular season`} />
       <div className="rows" role="list">{d.standings.map((t: any) => (
         <div key={t.id} className="row" style={{ gridTemplateColumns: '28px minmax(0,1fr) 80px 70px 80px', background: t.me ? 'var(--hover)' : undefined }}>
-          <span className="num" style={{ fontWeight: 700, color: 'var(--ink-3)' }}>{t.standing}</span>
+          <span className={`medal ${t.standing <= 3 ? `m${t.standing}` : ''}`}>{t.standing}</span>
           <div className="who"><FAvatar t={t} size={40} /><div style={{ minWidth: 0 }}><div className="nm">{t.name} {t.me && <Chip kind="info">You</Chip>}</div><div className="sub">{t.owner}</div></div></div>
           <div className="stat"><b>{t.record}</b><small>Record</small></div><div className="stat hide-sm"><b>{t.pf}</b><small>PF</small></div>
           <div className="stat hide-sm">{t.playoffPct ? <><b>{Math.round(t.playoffPct)}%</b><small>Playoffs</small></> : null}</div>

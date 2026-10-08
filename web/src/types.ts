@@ -2,7 +2,7 @@ export interface Player {
   id: number; name: string; pos: string; team: string; slot: string; status: string; statusLabel: string; onBye: boolean; out: boolean; risky: boolean
   proj: number; espnProj: number; hasEdge: boolean; edgeTotal: number; actualPpg: number; weekPts: number; totalPts: number; gp: number
   opp: string; kick: string; lock: string; owner: number | null; owned: number; watch: boolean; color: string; tags: [string, string][]; bye: number | null
-  img: { s: string; m: string; l: string } | null; edge?: any[]; context?: any[]; edgeRos?: number
+  img: { s: string; m: string } | null; edge?: any[]; context?: any[]; edgeRos?: number
   ros?: number; key?: number; trend?: number; healthy?: boolean; where?: string; tl?: string | null
   st?: { ppg: number; raw: number; tdShare: number; touches: number; snap: number | null; dep: boolean; vol: boolean; fmc: [number, number, number] } & Record<string, any>
 }

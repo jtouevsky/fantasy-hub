@@ -54,11 +54,11 @@ const initials = (n: string) => { const p = n.replace(/\./g, ' ').split(/\s+/).f
 export const Avatar = memo(function Avatar({ p, size = 44 }: { p: Pick<Player, 'name' | 'pos' | 'team' | 'color' | 'img'>; size?: number; big?: boolean }) {
   const [bad, setBad] = useState(false)
   if (p.pos === 'D/ST') return <TeamBadge abbr={p.team} size={size} />
-  const src = p.img ? (size <= 46 ? p.img.s : size <= 92 ? p.img.m : p.img.l) : null
+  const src = p.img ? (size <= 46 ? p.img.s : p.img.m) : null
   const showImg = !!src && !bad
   return (
     <span className="avatar" data-fb={showImg ? undefined : ''} style={{ '--s': `${size}px`, '--tc': p.color } as any}>
-      {showImg ? <img src={src!} alt="" width={size} height={size} loading="lazy" decoding="async" onError={() => setBad(true)} /> : <span className="ini">{initials(p.name)}</span>}
+      {showImg ? <img src={src!} alt="" width={size} height={size} loading={size >= 100 ? 'eager' : 'lazy'} decoding="async" onError={() => setBad(true)} /> : <span className="ini">{initials(p.name)}</span>}
     </span>
   )
 })

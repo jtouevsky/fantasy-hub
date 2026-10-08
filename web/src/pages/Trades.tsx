@@ -27,7 +27,7 @@ function Offer({ t, k }: { t: any; k: string }) {
   }
   const names = (a: any[]) => a.map((p) => p.name).join(' + ')
   return (
-    <>
+    <div className="offer-wrap">
       <article className="offer">
         <div className="ctxrow"><Chip kind="pos">{t.kind}</Chip><Chip kind={mk[0]} icon={mk[1]}>{t.verdictMeText}</Chip><Chip kind={mi[0]} icon={mi[1]}>{t.label[0].toUpperCase() + t.label.slice(1)} to accept</Chip>
           {t.confirmed && <Chip kind="good" icon="verified">Confirmed by manager</Chip>}{t.speculative && <Chip kind="warn" icon="bolt">Speculative</Chip>}</div>
@@ -55,7 +55,7 @@ function Offer({ t, k }: { t: any; k: string }) {
       {pitchOpen && <div className="field"><label>Pitch (edit, then send it yourself in ESPN). Nothing is sent automatically.</label><textarea rows={5} defaultValue={t.pitch} /></div>}
       {logOpen && <div className="form"><div className="field"><label>What did he say?</label><select value={resp} onChange={(e) => setResp(e.target.value)}>{['accepted', 'rejected', 'countered', 'no response'].map((x) => <option key={x}>{x}</option>)}</select></div>
         <div className="field"><label>Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. wants a RB back" /></div><button className="btn primary" onClick={save}><Icon n="check" /> Save</button></div>}
-    </>
+    </div>
   )
 }
 
@@ -100,7 +100,7 @@ function Find({ meta }: { meta: any }) {
   return (
     <>
       <div className="fresh" style={{ margin: '10px 0 6px' }}>Describe what you want in plain English, e.g. <i>find me a WR for the playoffs without giving up an RB, about 60/40</i>. I turn it into the settings below so you can correct anything before searching.</div>
-      <div style={{ display: 'flex', gap: 8 }}><input className="field" style={{ flex: 1, height: 42, borderRadius: 999, border: '1px solid var(--line-strong)', padding: '0 16px', background: 'var(--solid)' }} type="text" value={text} placeholder="e.g. sell high on my RB for a receiver; no QBs" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && read()} aria-label="Trade request" />
+      <div style={{ display: 'flex', gap: 8 }}><input className="big-in" style={{ flex: 1, borderRadius: 999 }} type="text" value={text} placeholder="e.g. sell high on my RB for a receiver; no QBs" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && read()} aria-label="Trade request" />
         <HeroButton icon="auto_fix_high" label="Read it" onClick={read} size={46} /></div>
       {notes.length > 0 && <div className="ctxrow" style={{ marginTop: 8 }}><Chip icon="psychology">How I read that</Chip>{notes.map((n) => <Chip key={n}>{n}</Chip>)}</div>}
       <div className="form">
@@ -117,7 +117,7 @@ function Find({ meta }: { meta: any }) {
       <div className="ctxrow">{search.data?.constraints.map((x: string) => <Chip key={x}>{x}</Chip>)}</div>
       {search.isLoading ? <><Notice icon="hourglass_top">Scanning every team for the cheapest offer that works...</Notice><Skel n={2} h={200} /></> :
         !search.data?.results.length ? <Notice kind="warn" icon="search_off">No trade clears both questions (good for you AND plausible for him) under these settings. Loosen the split, drop a position filter, or allow a sell/rebuild move.</Notice> :
-          <><Section title={`${search.data.results.length} option${search.data.results.length !== 1 ? 's' : ''}`} aside="cheapest winning offer first" />{search.data.results.map((t: any, i: number) => <Offer key={i} t={t} k={`f${i}`} />)}</>}
+          <><Section title={`${search.data.results.length} option${search.data.results.length !== 1 ? 's' : ''}`} aside="cheapest winning offer first" /><div className="offers">{search.data.results.map((t: any, i: number) => <Offer key={i} t={t} k={`f${i}`} />)}</div></>}
     </>
   )
 }

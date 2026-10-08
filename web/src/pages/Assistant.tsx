@@ -47,14 +47,13 @@ export default function Assistant() {
     onSuccess: (r) => { qc.setQueryData(['/api/chat'], (old: any) => ({ ...old, messages: r.messages })); setPending(null); setErr('') },
     onError: (e: any) => { setPending(null); setErr(e.message) },
   })
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [d?.messages?.length, pending])
+  useEffect(() => { if ((d?.messages?.length || 0) > 0 || pending) end.current?.scrollIntoView({ block: 'end' }) }, [d?.messages?.length, pending])
   if (isLoading || !d) return <Skel n={3} h={80} />
   const go = (p: string) => { if (!p.trim() || send.isPending) return; setPending(p); setPrompt(''); send.mutate(p) }
   const msgs = d.messages as any[]
   return (
     <>
-      <div className="asst-head"><Mascot size={64} /><div><h2>Assistant</h2><small>Reads your league through tools. Read-only.</small></div></div>
-      <div className="ctxrow"><Chip kind="ai" icon="auto_awesome">AI advice, not ESPN data</Chip>{d.chips.map((c: any) => <Chip key={c.text} icon={c.icon}>{c.text}</Chip>)}</div>
+      <div className="ctxrow asst-row"><Mascot size={44} /><Chip kind="ai" icon="auto_awesome">AI advice, not ESPN data</Chip>{d.chips.map((c: any) => <Chip key={c.text} icon={c.icon}>{c.text}</Chip>)}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
         <span className="fresh">Uses {d.backend !== 'api' ? 'your Claude subscription' : 'the Anthropic API'} · reads your league through tools · read-only</span>
         <button className="btn sm" onClick={async () => { await http('/api/chat', { method: 'DELETE' }); qc.setQueryData(['/api/chat'], { ...d, messages: [] }) }}><Icon n="delete_sweep" /> Clear</button>

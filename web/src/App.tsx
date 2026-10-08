@@ -17,6 +17,7 @@ import Assistant, { Msg } from './pages/Assistant'
 import Trades from './pages/Trades'
 import More from './pages/More'
 import PlayerSheet from './PlayerSheet'
+import AvatarCheck from './pages/AvatarCheck'
 
 
 const NAV: [string, string, string, string[]][] = [
@@ -210,6 +211,7 @@ function Shell({ boot }: { boot: Boot }) {
                   <Route path="/" element={<Overview />} /><Route path="/team" element={<Team />} /><Route path="/matchup" element={<Matchup />} />
                   <Route path="/players" element={<Players />} /><Route path="/trades" element={<Trades />} /><Route path="/league" element={<League />} />
                   <Route path="/assistant" element={<Assistant />} /><Route path="/more" element={<More tab={moreTab} setTab={setMoreTab} />} />
+                  <Route path="/dev/avatars" element={<AvatarCheck />} />
                   <Route path="*" element={<Notice icon="explore_off">That page doesn't exist. <button className="btn sm" onClick={() => navigate('/')}>Go to Overview</button></Notice>} />
                 </Routes>
               </Suspense>

@@ -4,7 +4,7 @@
   --bg: #fbf5e8; --card: #ffffff; --card-2: #f3ecdc; --ink: #16130f; --ink-2: #4a443a; --ink-3: #766f62; --line: rgba(22,19,15,.16); --hover: rgba(22,19,15,.05);
   --edge: #16130f; --chipbg: rgba(22,19,15,.07); --shadow: 4px 4px 0 var(--edge); --shadow-sm: 0 3px 0 var(--edge);
   --cobalt: #2d5bff; --lime: #c8f031; --coral: #ff5d48; --sun: #ffc83d; --grape: #7c4dff; --teal: #10b5a4;
-  --good: #0b8f52; --good-bg: rgba(11,143,82,.13); --warn: #8f5200; --warn-bg: rgba(255,200,61,.34); --bad: #c8102e; --bad-bg: rgba(200,16,46,.11); --info: #2d4fd0; --info-bg: rgba(45,91,255,.11);
+  --good: #087a45; --good-bg: rgba(8,122,69,.13); --warn: #8f5200; --warn-bg: rgba(255,200,61,.34); --bad: #c8102e; --bad-bg: rgba(200,16,46,.11); --info: #2d4fd0; --info-bg: rgba(45,91,255,.11);
   --sec: var(--cobalt); --on-sec: #ffffff; --accent: var(--sec); --accent-ink: var(--on-sec);
   --f-body: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif; --f-disp: 'Barlow Condensed', 'Geist', system-ui, sans-serif; --f-mono: 'Geist Mono', ui-monospace, monospace;
   --spring: cubic-bezier(.34, 1.56, .64, 1); --ease: cubic-bezier(.2, .7, .2, 1); --r-card: 24px; --r-ctl: 14px; --rail-w: 236px; color-scheme: light;
@@ -13,7 +13,7 @@
 [data-theme=dark] {
   --bg: #14131c; --card: #211f30; --card-2: #2a2840; --ink: #f6f1e4; --ink-2: #c9c2b2; --ink-3: #9a9384; --line: rgba(246,241,228,.16); --hover: rgba(246,241,228,.06);
   --edge: #07070c; --chipbg: rgba(246,241,228,.1); --shadow: 4px 4px 0 var(--edge);
-  --cobalt: #5b7dff; --lime: #c8f031; --coral: #ff7561; --sun: #ffc83d; --grape: #9a74ff; --teal: #2bd0be;
+  --cobalt: #4666f2; --lime: #c8f031; --coral: #ff7561; --sun: #ffc83d; --grape: #7f52f0; --teal: #2bd0be;
   --good: #4ad28f; --good-bg: rgba(74,210,143,.16); --warn: #ffc83d; --warn-bg: rgba(255,200,61,.17); --bad: #ff7a8e; --bad-bg: rgba(255,122,142,.16); --info: #9db2ff; --info-bg: rgba(91,125,255,.2);
   color-scheme: dark;
 }
@@ -89,7 +89,7 @@ a { color: inherit; } h1, h2, h3, h4, h5, h6 { margin: 0; }
 .hero-core { width: var(--s); height: var(--s); border-radius: 36%; display: grid; place-items: center; background: var(--sec); color: var(--on-sec); border: 2px solid var(--edge); box-shadow: 0 5px 0 var(--edge); transition: transform 170ms var(--spring), box-shadow 170ms var(--spring), border-radius 240ms var(--spring); } .hero-core .ms { font-size: calc(var(--s) * .46); }
 .hero:hover .hero-core { transform: translateY(-3px) rotate(-4deg); box-shadow: 0 8px 0 var(--edge); border-radius: 50%; } .hero:active .hero-core { transform: translateY(5px); box-shadow: 0 0 0 var(--edge); } .hero:disabled { opacity: .5; cursor: default; } .hero-label { max-width: calc(var(--s) + 34px); text-align: center; line-height: 1.15; }
 .ctxrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
-.chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px; background: var(--chipbg); font-size: 12.5px; font-weight: 600; white-space: nowrap; } .chip .ms { font-size: 16px; vertical-align: -3px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px; background: var(--chipbg); font-size: 12.5px; font-weight: 600; max-width: 100%; } .chip .ms { font-size: 16px; vertical-align: -3px; }
 .chip.good { background: var(--good-bg); color: var(--good); } .chip.warn { background: var(--warn-bg); color: var(--warn); } .chip.bad { background: var(--bad-bg); color: var(--bad); } .chip.info { background: var(--info-bg); color: var(--info); } .chip.ai { background: var(--info-bg); color: var(--info); } .chip.pos { font-weight: 800; letter-spacing: .04em; background: var(--ink); color: var(--bg); }
 .sticker { --r: -3deg; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 12px; border: 2px solid var(--edge); background: var(--card); color: #16130f; font: 700 13px/1.1 var(--f-body); box-shadow: 2px 2px 0 var(--edge); transform: rotate(var(--r)); text-transform: uppercase; letter-spacing: .04em; }
 .sticker.lime { background: var(--lime); } .sticker.sun { background: var(--sun); } .sticker.coral { background: var(--coral); } .sticker.grape { background: var(--grape); color: #fff; } .sticker.cobalt { background: var(--cobalt); color: #fff; } .sticker.ink { background: #16130f; color: #f6f1e4; border-color: #f6f1e4; box-shadow: 2px 2px 0 rgba(0,0,0,.5); } .sticker.warn { background: var(--sun); } .sticker.good { background: var(--lime); } .sticker.bad { background: var(--coral); }
@@ -250,3 +250,19 @@ table.cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; } table.c
 [data-s=matchup] .board::before { display: none; }
 .mini .mt b { white-space: normal; }
 .panel .rec { margin: 8px 0; } .mini-move { align-items: flex-start; } .mini-move .mt small { white-space: normal; }
+
+/* responsive overrides live LAST so they beat the base rules above */
+@media (max-width: 1359px) { .rail { align-items: center; padding: 16px 10px; } .rail .bt, .rail .nl, .rail .rf-t { display: none; } .rail .nav a { padding: 8px; justify-content: center; } .rail-foot { padding: 6px; background: none; } }
+@media (max-width: 899px) { .rail { display: none; } .stage { min-width: 0; } }
+@media (max-width: 600px) { .rec .faces { display: none; } .rec > div:nth-child(2) { flex: 1 1 0; min-width: 0; } .rec h4 { font-size: 18px; } }
+
+.content > .sec:first-child { margin-top: 52px; } .content > .ctxrow:first-child, .content > .pills:first-child { margin-top: 50px; }
+.asst-row { margin-top: 52px !important; } .app[data-panel=on] .chatbar { right: clamp(340px, 24vw, 440px); }
+@media (min-width: 900px) and (max-width: 1359px) { .chatbar { left: 84px; } }
+@media (max-width: 899px) { .search { order: 5; width: 100%; } .topbar .brand.sm { margin-right: auto; } }
+@media (max-width: 700px) { .nm { white-space: normal; overflow: visible; text-overflow: clip; } .row { align-items: start; } .row .who { align-items: flex-start; } .stat b { font-size: 20px; } }
+/* reading text is capped by measure, the layout is not */
+.notice > div, .news p, .rec p, .empty, .why2 ul, details.exp > div, .msg .t { max-width: 96ch; } .empty { margin-left: auto; margin-right: auto; max-width: 760px; }
+[data-s=players] .form { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; } [data-s=players] .form .field:nth-child(2) { flex: 1 1 240px; max-width: 420px; }
+
+.offers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 620px), 1fr)); gap: 6px 22px; align-items: start; } .offer-wrap { min-width: 0; }

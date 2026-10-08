@@ -63,3 +63,23 @@ How the effects stay cheap:
 * **Rings** are one conic-gradient plus a radial mask; **chrome rims** are a conic-gradient whose angle (a registered `@property`) transitions only on hover or press; the **scoreboard light** moves with the pointer through two CSS variables (one `requestAnimationFrame` per move, only while hovering); **split-flap digits** run a single 240 ms flip, and only the digit that changed re-mounts. No WebGL or shaders anywhere, no looping animations, nothing animates offscreen.
 * `prefers-reduced-motion` turns the flips and transitions into static states.
 * Dither / ASCII texture is a mask and a text row on the News header only, never behind text.
+
+
+## After the UI v4 overhaul (fun colors, shapes, motion, full-width layout)
+
+Re-measured in the browser on the live league (final build). View Transitions are on (`document.startViewTransition` present).
+
+| What | Part 1 | After UI v3 | **After UI v4** |
+|---|---|---|---|
+| Tab switch, click to content (16 switches across all 8 tabs) | 0.8 - 25 ms | 0.9 - 35 ms (median ~5) | **2 - 29.5 ms (median 8.6)** |
+| Skeletons on a tab switch (data prefetched) | 0 | 0 | 0 |
+| Main JS bundle | 370 KB (115 KB gzip) | 416 KB (126 KB gzip) | **425 KB (129 KB gzip)** |
+| CSS | ~21 KB | ~30 KB | 41 KB (9.5 KB gzip) |
+| Font payload | Google Fonts, third-party requests, 4 families | same | **self-hosted Latin subsets, 92 KB total** (Barlow Condensed 700/800 about 15 KB each, preloaded; one Geist variable file 29 KB; icon font subset to the glyphs used, 13 KB) |
+| Elements with `backdrop-filter` | 0 | 2 (header, nav) | **0** |
+| CSS animations running while idle | 0 | 0 | **0** (checked after the page settled) |
+| Animation libraries | none | none | **none** (springs are CSS `linear()` easing; page changes use the View Transitions API) |
+
+The median moved from about 5 to 8.6 ms because a page change now runs inside a view transition (one extra frame to capture the old page), which buys the cross-fade and the portrait morph; it is still about a tenth of the 100 ms budget. No effect was dropped for speed.
+
+Rules the v4 motion follows: only `transform` and `opacity` animate; micro-interactions are 120 to 200 ms and transitions at most 300 ms (page change 110 ms out, 220 ms in; portrait morph 300 ms); the entrance stagger plays on the first load only (a flag removed about 1.8 s after load); tickers and celebrations run once per change and not at all under `prefers-reduced-motion`; headshots are served at the rendered size (120 px wide for avatars up to 46 px, 240 px for larger ones, about 10 KB and 38 KB) instead of one large image.

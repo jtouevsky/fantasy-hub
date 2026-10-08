@@ -10,6 +10,7 @@
     <link rel="preload" href="/fonts/BarlowCondensed-700.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/Geist-var.woff2" as="font" type="font/woff2" crossorigin />
     <script>
+      document.documentElement.dataset.boot = '1'   // first-load entrance stagger; removed after ~1.8 s
       // apply the saved theme before first paint so there is never a light/dark flash
       try { var q = new URLSearchParams(location.search).get('theme'); if (q) sessionStorage.setItem('fh:force', q); var m = sessionStorage.getItem('fh:force') || localStorage.getItem('fh:mode') || 'System'; m = m.charAt(0).toUpperCase() + m.slice(1); var d = m === 'Dark' || (m === 'System' && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = d ? 'dark' : 'light'; } catch (e) {}
     </script>
