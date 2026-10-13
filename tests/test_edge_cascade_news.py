@@ -94,7 +94,8 @@ def test_p_for_uses_practice_trend_for_questionable_only():
 # news scanning: extraction only, guardrails against invented facts
 # ---------------------------------------------------------------------------
 NOW = datetime(2026, 10, 7, 12, tzinfo=timezone.utc)
-RECENT = "2026-10-06T09:00:00Z"
+from datetime import datetime, timedelta, timezone
+RECENT = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")      # always inside the 6-day freshness window
 
 
 def item(pid=1, name="Chuba Hubbard", headline="Hubbard (ankle) ruled out vs. the Saints", story="Chuba Hubbard has been ruled out for Sunday's game with an ankle injury. Rico Dowdle is expected to handle the lead role.", published=RECENT):
