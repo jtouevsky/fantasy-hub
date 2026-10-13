@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useApi, put, qc } from '../api'
-import { Celebrate, useOnce } from '../fx'
 import { AskAI, Chip, Empty, GameEnv, Icon, NewsEvent, Notice, Section, Skel, PlayerRow, useActions, useBoot } from '../ui'
 
 function News() {
@@ -9,7 +8,6 @@ function News() {
   if (!d.available) return <Empty title="News isn't available in demo mode" body="Connect your league to see ESPN and Sleeper news." icon="newspaper" />
   return (
     <>
-      <div className="dither ascii" aria-hidden="true">{'░▒▓█▓▒░ NEWS ░▒▓█▓▒░ '.repeat(8)}</div>
       <Section title="Lineup alerts" aside="things that should change this week's lineup" />
       {d.alerts.length === 0 && <Notice kind="good" icon="check_circle">Nothing in the news should change your lineup this week.</Notice>}
       {d.alerts.map((a: any, i: number) => <Notice key={i} kind={{ ACT: 'bad', WATCH: 'warn', INFO: '' }[a.sev as string] || ''} icon={{ ACT: 'error', WATCH: 'visibility', INFO: 'info' }[a.sev as string] || 'info'}><b>{a.sev[0] + a.sev.slice(1).toLowerCase()}</b> · {a.who && `${a.who}: `}{a.msg}{a.action && <div className="fresh">{a.action}</div>}</Notice>)}
@@ -96,12 +94,9 @@ function Log() {
 
 function Report() {
   const { data: d, isLoading } = useApi<any>('/api/report', { stale: 60_000 })
-  const newest = d?.rows?.find((r: any) => r.hit === 1)
-  const [showHit, doneHit] = useOnce(`fh:hit:${newest?.id}`)
   if (isLoading || !d) return <Skel n={3} h={70} />
   return (
     <>
-      {newest && showHit && <Celebrate title="Nice call!" sub={`${newest.add_name} outscored ${newest.drop_name || 'the bench'} by ${newest.diff} pts`} onDone={doneHit} />}
       <Notice icon="fact_check">Every add and lineup swap the app recommends is recorded. A recommendation is a <b>hit</b> when the player it said to add or start scored more fantasy points than the player he replaced, over the games played since (up to 3 weeks), under your league scoring.</Notice>
       <div className="kpis"><div className="kpi"><b>{d.rate != null ? `${d.rate}%` : '-'}</b><small>Hit rate ({d.hits} of {d.scored} scored)</small></div><div className="kpi"><b>{d.total}</b><small>Recommendations recorded</small></div><div className="kpi"><b>{d.pending}</b><small>Waiting for games</small></div></div>
       {d.weeks.length > 0 && <><Section title="By week" /><div className="card"><table className="edge-table"><thead><tr><th>Week</th><th>Scored</th><th>Hits</th><th>Hit rate</th></tr></thead><tbody>{d.weeks.map((w: any) => <tr key={w.week}><td>Week {w.week}</td><td className="num">{w.n}</td><td className="num">{w.hits}</td><td className="num">{w.rate}%</td></tr>)}</tbody></table></div></>}

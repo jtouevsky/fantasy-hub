@@ -1,10 +1,10 @@
-import { createContext, memo, ReactNode, useContext, useState } from 'react'
+import { createContext, memo, ReactNode, useContext, useEffect, useRef, useState } from 'react'
 import type { Boot, FTeam, Player } from './types'
 
 // ---- app-wide context ------------------------------------------------------------------
 export const BootCtx = createContext<Boot | null>(null)
 export const useBoot = () => useContext(BootCtx) as Boot
-export interface Actions { openPlayer: (id: number, origin?: HTMLElement | null) => void; askAI: (prompt: string, title: string) => void; toast: (msg: string) => void }
+export interface Actions { openPlayer: (id: number) => void; askAI: (prompt: string, title: string) => void; toast: (msg: string) => void }
 export const ActionsCtx = createContext<Actions>({ openPlayer: () => {}, askAI: () => {}, toast: () => {} })
 export const useActions = () => useContext(ActionsCtx)
 
@@ -81,7 +81,7 @@ export const TagChips = ({ p }: { p: Player }) => (
     const st = p.st
     const label = t === 'td-dependent' && st ? `TD-dependent · ${Math.round(st.tdShare * 100)}% TDs · ${st.touches.toFixed(1)} t/g`
       : t === 'volume-backed' && st ? `Volume-backed · ${st.touches.toFixed(1)} t/g` : t
-    return <Chip key={t} kind={t === 'td-dependent' ? 'warn' : t === 'volume-backed' ? 'good' : 'ai'} icon={TAG_ICON[t] || 'sell'} title={why}>{label}</Chip>
+    return <Chip key={t} kind={t === 'td-dependent' ? 'warn' : t === 'volume-backed' ? 'good' : ''} icon={TAG_ICON[t] || 'sell'} title={why}>{label}</Chip>
   })}</>
 )
 
@@ -125,7 +125,7 @@ export const PlayerRow = memo(function PlayerRow({ p, slot, moved, note, showAct
     <div className={cls} role="listitem" style={{ '--tc': p.color } as any}>
       <div className="who">
         {slot && <span className="slot">{slot}</span>}
-        <button className="av-btn" aria-label={`Open ${p.name}`} onClick={(e) => openPlayer(p.id, e.currentTarget.querySelector('.avatar') as HTMLElement)}><Avatar p={p} size={44} /></button>
+        <button className="av-btn" aria-label={`Open ${p.name}`} onClick={() => openPlayer(p.id)}><Avatar p={p} size={44} /></button>
         <div style={{ minWidth: 0 }}>
           <div className="nm">{p.name}</div>
           <div className="sub"><Chip kind="pos">{p.pos}</Chip><NflTag abbr={p.team} /><StatusChip p={p} />
@@ -139,7 +139,7 @@ export const PlayerRow = memo(function PlayerRow({ p, slot, moved, note, showAct
       {showActual
         ? <div className="stat hide-sm"><b>{p.weekPts.toFixed(1)}</b><small>Actual</small></div>
         : <div className="stat hide-sm"><b>{valueLabel ?? p.actualPpg.toFixed(1)}</b><small>{valueLabel ? 'ROS pts' : 'Avg'}</small>{valuePct !== undefined && <div className="bar"><i style={{ width: `${Math.max(2, Math.min(100, valuePct))}%` }} /></div>}</div>}
-      <button className="iconbtn" aria-label={`Details for ${p.name}`} onClick={(e) => openPlayer(p.id, (e.currentTarget.closest('.row')?.querySelector('.avatar') as HTMLElement) || null)}><Icon n="chevron_right" /></button>
+      <button className="iconbtn" aria-label={`Details for ${p.name}`} onClick={() => openPlayer(p.id)}><Icon n="chevron_right" /></button>
     </div>
   )
 })
@@ -226,11 +226,44 @@ export function AskAI({ label, prompt, title, icon = 'auto_awesome' }: { label: 
   return <button className="btn sm" onClick={() => askAI(prompt, title)} title="Opens an AI review. It only reads your league and never makes changes."><Icon n={icon} /> {label}</button>
 }
 
+function useEscape(onClose: () => void) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+}
+
+/** Remembers what had focus, moves focus into the dialog, and gives it back on close. */
+function useDialogFocus(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null
+    ref.current?.focus()
+    return () => { prev?.focus?.() }
+  }, [ref])
+}
+
 export function Modal({ onClose, title, children }: { onClose: () => void; title: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEscape(onClose)
+  useDialogFocus(ref)
   return (
-    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }} role="dialog" aria-modal="true" aria-label={title}>
-      <div className="modal"><div className="head"><b>{title}</b><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon n="close" /></button></div>{children}</div>
+    <div className="scrim modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }} role="presentation">
+      <div className="modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}><div className="head"><b>{title}</b><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon n="close" /></button></div>{children}</div>
     </div>
+  )
+}
+
+/** Slide-over panel from the right (player details). Esc, the scrim and the close button all close it. */
+export function Drawer({ onClose, title, children }: { onClose: () => void; title: string; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null)
+  useEscape(onClose)
+  useDialogFocus(ref)
+  return (
+    <>
+      <div className="scrim" onMouseDown={onClose} role="presentation" />
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}><div className="head"><b>{title}</b><button className="iconbtn" onClick={onClose} aria-label={`Close ${title.toLowerCase()}`}><Icon n="close" /></button></div>{children}</aside>
+    </>
   )
 }
 
