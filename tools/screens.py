@@ -52,7 +52,7 @@ async def capture(url: str, out_png: str, w: int, h: int) -> None:
         await c.call("Page.navigate", url=url)
         t0 = time.time()
         while time.time() - t0 < 25:                      # wait for real content (header band present, no skeletons)
-            r = await c.call("Runtime.evaluate", expression="!!document.querySelector('.band h1') && !document.querySelector('.content .skel') && document.fonts.status === 'loaded'", returnByValue=True)
+            r = await c.call("Runtime.evaluate", expression="!!document.querySelector('.page-head h1') && !document.querySelector('.content .skel') && document.fonts.status === 'loaded'", returnByValue=True)
             if r["result"].get("value"):
                 break
             await asyncio.sleep(0.4)
@@ -86,7 +86,7 @@ def main() -> int:
             except Exception:
                 time.sleep(0.2)
         n, overflow = 0, []
-        for theme in ([a.theme] if a.theme else ["light", "dark"]):
+        for theme in ["dark"]:
             for size, (w, h) in SIZES.items():
                 if a.only and size != a.only:
                     continue
@@ -94,7 +94,7 @@ def main() -> int:
                     if a.screen and name != a.screen:
                         continue
                     png = os.path.join(a.out, f"{name}-{size}-{theme}.png")
-                    asyncio.run(capture(f"{a.base}{path}{'&' if '?' in path else '?'}theme={theme}", png, w, h))
+                    asyncio.run(capture(f"{a.base}{path}", png, w, h))
                     sw = int(open(png + ".w").read()); os.remove(png + ".w")
                     if sw > w + 1:
                         overflow.append(f"{name}-{size}-{theme}: scrollWidth {sw} > {w}")

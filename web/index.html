@@ -1,19 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="background:#121214">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#121214" />
     <title>Fantasy Hub</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23222'/%3E%3Cellipse cx='32' cy='32' rx='20' ry='12' transform='rotate(-35 32 32)' fill='none' stroke='%23ddd' stroke-width='4'/%3E%3C/svg%3E" />
-    <link rel="preload" href="/fonts/BarlowCondensed-800.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/BarlowCondensed-700.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/Geist-var.woff2" as="font" type="font/woff2" crossorigin />
-    <script>
-      document.documentElement.dataset.boot = '1'   // first-load entrance stagger; removed after ~1.8 s
-      // apply the saved theme before first paint so there is never a light/dark flash
-      try { var q = new URLSearchParams(location.search).get('theme'); if (q) sessionStorage.setItem('fh:force', q); var m = sessionStorage.getItem('fh:force') || localStorage.getItem('fh:mode') || 'System'; m = m.charAt(0).toUpperCase() + m.slice(1); var d = m === 'Dark' || (m === 'System' && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = d ? 'dark' : 'light'; } catch (e) {}
-    </script>
   </head>
   <body>
     <div id="root"></div>
