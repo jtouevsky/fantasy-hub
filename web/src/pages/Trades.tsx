@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApi, post, qc } from '../api'
-import { HeroButton } from '../fx'
+import { Spinner } from '../fx'
 import { AskAI, Avatar, Chip, Empty, FAvatar, Icon, Notice, Section, Skel, NflTag, TagChips, useActions } from '../ui'
 
 const POS = ['QB', 'RB', 'WR', 'TE']
@@ -42,15 +42,15 @@ function Offer({ t, k }: { t: any; k: string }) {
         <div className="wkrow">{t.weeks.map((w: any) => <div key={w.w} className={`wk ${w.d > 0.05 ? 'up' : w.d < -0.05 ? 'dn' : ''} ${w.mark === 'playoffs' ? 'po' : ''}`} title={`Week ${w.w}: ${w.before} to ${w.after} expected points`}><small>W{w.w}</small><b>{w.d >= 0 ? '+' : ''}{w.d.toFixed(1)}</b><i>{w.mark}</i></div>)}</div>
         <div className="why2"><div><h5>His side: for and against</h5><ul>{t.confirmed && <li><i>{t.confirmed}</i></li>}{pro.map((x: any) => <li key={x.name}><b className="up">+</b> {x.name}: {x.text}</li>)}{con.map((x: any) => <li key={x.name}><b className="dn">-</b> {x.name}: {x.text}</li>)}{!t.confirmed && !pro.length && !con.length && <li>No strong signals either way.</li>}</ul></div>
           <div><h5>Risk and notes</h5><ul>{[...t.risk, ...t.notes].map((r: string, i: number) => <li key={i}>{r}</li>)}{!t.risk.length && !t.notes.length && <li>Nothing unusual.</li>}</ul></div></div>
-        {t.ladder.length > 0 && <div className="ladder"><h5 style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-3)', margin: '0 0 6px' }}>Offer ladder</h5><ol>{t.ladder.map((s: any, i: number) => (
+        {t.ladder.length > 0 && <div className="ladder"><h5 style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)', margin: '0 0 6px' }}>Offer ladder</h5><ol>{t.ladder.map((s: any, i: number) => (
           <li key={i} className="step"><span className="n">{i + 1}</span><div style={{ minWidth: 0 }}><b>{s.name}</b><div className="g">{s.give.join(' + ')}</div><div className="n2"><Chip kind={THEM[s.label][0]} icon={THEM[s.label][1]}>{s.label[0].toUpperCase() + s.label.slice(1)}</Chip><span className="num">{s.myDelta >= 0 ? '+' : ''}{s.myDelta} for you</span></div><small>{s.note}</small></div></li>))}</ol></div>}
-        <div className="todo" style={{ marginTop: 12, display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--ink-2)' }}><Icon n="arrow_forward" /><span>Do this in the ESPN app: open {t.other.name}'s team and propose this trade.</span></div>
+        <div className="todo" style={{ marginTop: 12, display: 'flex', gap: 6, fontSize: 12.5, color: 'var(--muted)' }}><Icon n="arrow_forward" /><span>Do this in the ESPN app: open {t.other.name}'s team and propose this trade.</span></div>
       </article>
       <div className="hero-actions">
-        <HeroButton icon="balance" label="Ask AI" size={52} onClick={() => askAI(`Evaluate this trade for me: I give ${names(t.give)} and get ${names(t.get)} from ${t.other.name}. Use evaluate_trade, answer 'should I offer it' and 'would they accept' separately, and show the offer ladder.`, 'Trade review')} />
-        <HeroButton icon="chat" label="Draft message" size={52} onClick={() => setPitchOpen(!pitchOpen)} />
-        <HeroButton icon="edit_note" label="Log answer" size={52} onClick={() => setLogOpen(!logOpen)} />
-        <HeroButton icon="bookmark_add" label="Save" size={52} onClick={async () => { await post('/api/recommendations', { kind: 'trade', summary: `${names(t.give)} for ${names(t.get)} (${t.other.name})`, details: { my_delta: t.myDelta, acceptance: t.label } }); toast('Saved to your recommendation log.') }} />
+        <button className="btn sm" onClick={() => askAI(`Evaluate this trade for me: I give ${names(t.give)} and get ${names(t.get)} from ${t.other.name}. Use evaluate_trade, answer 'should I offer it' and 'would they accept' separately, and show the offer ladder.`, 'Trade review')}><Icon n="balance" /> Ask AI</button>
+        <button className="btn sm" onClick={() => setPitchOpen(!pitchOpen)}><Icon n="chat" /> Draft message</button>
+        <button className="btn sm" onClick={() => setLogOpen(!logOpen)}><Icon n="edit_note" /> Log answer</button>
+        <button className="btn sm" onClick={async () => { await post('/api/recommendations', { kind: 'trade', summary: `${names(t.give)} for ${names(t.get)} (${t.other.name})`, details: { my_delta: t.myDelta, acceptance: t.label } }); toast('Saved to your recommendation log.') }}><Icon n="bookmark_add" /> Save</button>
       </div>
       {pitchOpen && <div className="field"><label>Pitch (edit, then send it yourself in ESPN). Nothing is sent automatically.</label><textarea rows={5} defaultValue={t.pitch} /></div>}
       {logOpen && <div className="form"><div className="field"><label>What did he say?</label><select value={resp} onChange={(e) => setResp(e.target.value)}>{['accepted', 'rejected', 'countered', 'no response'].map((x) => <option key={x}>{x}</option>)}</select></div>
@@ -101,7 +101,7 @@ function Find({ meta }: { meta: any }) {
     <>
       <div className="fresh" style={{ margin: '10px 0 6px' }}>Describe what you want in plain English, e.g. <i>find me a WR for the playoffs without giving up an RB, about 60/40</i>. I turn it into the settings below so you can correct anything before searching.</div>
       <div style={{ display: 'flex', gap: 8 }}><input className="big-in" style={{ flex: 1, borderRadius: 999 }} type="text" value={text} placeholder="e.g. sell high on my RB for a receiver; no QBs" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && read()} aria-label="Trade request" />
-        <HeroButton icon="auto_fix_high" label="Read it" onClick={read} size={46} /></div>
+        <button className="btn" onClick={read}><Icon n="auto_fix_high" /> Read it</button></div>
       {notes.length > 0 && <div className="ctxrow" style={{ marginTop: 8 }}><Chip icon="psychology">How I read that</Chip>{notes.map((n) => <Chip key={n}>{n}</Chip>)}</div>}
       <div className="form">
         <div className="field"><label>Trade with</label><select value={partner} onChange={(e) => setPartner(e.target.value === '' ? '' : Number(e.target.value))}><option value="">Anyone in the league</option>{others.map((t: any) => <option key={t.id} value={t.id}>{t.first ? `${t.first} · ` : ''}{t.name}</option>)}</select></div>
