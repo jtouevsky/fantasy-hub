@@ -134,7 +134,7 @@ function Shell({ boot }: { boot: Boot }) {
     <ActionsCtx.Provider value={actions}>
       <header className="topbar">
         <button className="btn ghost icon menu-btn" aria-label="Open menu" aria-expanded={menu} onClick={() => setMenu(true)}><Icon n="menu" /></button>
-        <div className="brand"><span className="mark"><Icon n="sports_football" /></span><b>Fantasy Hub</b></div>
+        <div className="brand"><span className="mark shine"><Icon n="sports_football" /></span><b>Fantasy Hub</b></div>
         <div className="grow" />
         <button className={`btn ghost ${refresh.isPending ? 'busy' : ''}`} style={{ minWidth: 112 }} disabled={boot.demo || refresh.isPending} onClick={() => refresh.mutate()} title={boot.demo ? 'Demo data never changes.' : 'Fetch the latest from ESPN'}>
           {refresh.isPending ? <Spinner /> : <Icon n="refresh" />} <span className="hide-xs">Refresh</span></button>
@@ -191,7 +191,7 @@ function Setup({ boot }: { boot: Boot }) {
   const [busy, setBusy] = useState(false)
   return (
     <div className="setup">
-      <div className="tile"><Icon n="sports_football" /></div>
+      <div className="tile shine"><Icon n="sports_football" /></div>
       <h1>{s.problem ? "Couldn't reach your league" : 'Connect your league'}</h1>
       <p>{s.problem || `Add ${(s.missing || []).join(', ')} to the .env file (see the README), then restart.`}</p>
       <div className="actions">

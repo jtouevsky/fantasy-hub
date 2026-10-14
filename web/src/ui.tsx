@@ -223,7 +223,7 @@ export function MovesBlock({ moves, showStreams = true, limit = 99, showEmpty = 
 
 export function AskAI({ label, prompt, title, icon = 'auto_awesome' }: { label: string; prompt: string; title: string; icon?: string }) {
   const { askAI } = useActions()
-  return <button className="btn sm" onClick={() => askAI(prompt, title)} title="Opens an AI review. It only reads your league and never makes changes."><Icon n={icon} /> {label}</button>
+  return <button className="qchip" onClick={() => askAI(prompt, title)} title="Opens an AI review. It only reads your league and never makes changes."><Icon n={icon} />{label}</button>
 }
 
 function useEscape(onClose: () => void) {

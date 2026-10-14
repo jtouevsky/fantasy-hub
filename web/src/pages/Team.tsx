@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Switch } from '../pick'
 import { useApi, post, qc } from '../api'
 import { AskAI, Icon, Notice, PlayerRow, RecCard, Rows, Section, Skel, signed, useActions } from '../ui'
 
@@ -20,8 +21,7 @@ export default function Team() {
           <div className="kpi"><b>{d.optimalTotal.toFixed(1)}</b><small>Optimal projected ({d.riskMode.toLowerCase()})</small></div>
           <div className="kpi"><b className={d.gain > 0.05 ? 'up' : ''}>{signed(d.gain)}</b><small>Possible gain</small></div>
         </div>
-        <label className="toggle" title={d.hasSwaps ? 'Shows where each player would sit. Nothing is changed in ESPN.' : 'Your lineup is already optimal.'}>
-          <input type="checkbox" checked={preview} disabled={!d.hasSwaps} onChange={(e) => setPreview(e.target.checked)} /> Preview the optimal lineup</label>
+        <Switch on={preview} onChange={(v) => d.hasSwaps && setPreview(v)}>{d.hasSwaps ? 'Preview the optimal lineup' : 'Lineup already optimal'}</Switch>
       </div>
       <Notice icon="lock"><b>Fantasy Hub is read-only.</b> Previews show recommendations; make the actual moves in the ESPN app.</Notice>
       {d.edgesOn && <Notice icon="bolt"><b>Edges on:</b> projections include adjustments for injuries, game environment, weather and opportunity. On ESPN's raw numbers your optimal lineup is {d.espnOptimal.toFixed(1)}; with edges {d.optimalTotal.toFixed(1)} ({signed(d.optimalTotal - d.espnOptimal)}).</Notice>}

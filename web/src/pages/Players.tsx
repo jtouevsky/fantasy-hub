@@ -1,6 +1,7 @@
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useApi } from '../api'
+import { Seg, Switch } from '../pick'
 import { Chip, Empty, MovesBlock, PlayerRow, Section, Skel, Icon } from '../ui'
 import type { Player } from '../types'
 
@@ -38,13 +39,13 @@ export default function Players() {
       {d.watch.length > 0 && <><Section title="Watchlist" aside={`${d.watch.length} saved player${d.watch.length !== 1 ? 's' : ''}`} />
         <div className="rows">{d.watch.map((p: Player) => <PlayerRow key={p.id} p={p} showActual={false} note={` · ${p.where}`} whyOpen={false} />)}</div></>}
       <Section title="Browse free agents" />
-      <div className="pills" role="group" aria-label="Position">{['All', ...d.positions].map((x: string) => <button key={x} className={`pill ${pos === x ? 'on' : ''}`} onClick={() => setPos(x)}>{x}</button>)}</div>
-      <div className="form" style={{ marginTop: 10 }}>
-        <div className="field"><label>Sort by</label><div className="pills">{SORTS.map((x) => <button key={x} className={`pill ${sort === x ? 'on' : ''}`} onClick={() => setSort(x)}>{x}</button>)}</div></div>
-        <div className="field"><label htmlFor="plq">Search free agents</label><input id="plq" type="text" value={q} placeholder="Search by name or team" onChange={(e) => setQ(e.target.value)} /></div>
-        <label className="toggle"><input type="checkbox" checked={healthy} onChange={(e) => setHealthy(e.target.checked)} /> Only healthy, not on bye</label>
+      <div className="toolbar">
+        <Seg label="Position" value={pos} onChange={setPos} options={['All', ...d.positions].map((x: string) => ({ v: x, l: x }))} />
+        <Seg label="Sort by" value={sort} onChange={setSort} options={SORTS.map((x) => ({ v: x, l: x }))} />
+        <label className="search-f"><Icon n="search" /><input id="plq" type="text" value={q} placeholder="Search by name or team" aria-label="Search free agents" onChange={(e) => setQ(e.target.value)} /></label>
+        <Switch on={healthy} onChange={setHealthy}>Only healthy, not on bye</Switch>
       </div>
-      {d.hasTags && <div className="pills" style={{ marginBottom: 8 }}>{['Buy low', 'Sell high', 'Role growing'].map((x) => <button key={x} className={`pill ${tag === x ? 'on' : ''}`} onClick={() => setTag(tag === x ? '' : x)} title="From expected-points vs actual production (backtested: buy-low and sell-high predict the next game; role-growing is informational).">{x}</button>)}</div>}
+      {d.hasTags && <div className="quick" role="group" aria-label="Signals">{['Buy low', 'Sell high', 'Role growing'].map((x) => <button key={x} type="button" className="qchip" aria-pressed={tag === x} onClick={() => setTag(tag === x ? '' : x)} title="From expected-points vs actual production (backtested)"><Icon n={x === 'Buy low' ? 'trending_up' : x === 'Sell high' ? 'sell' : 'bolt'} />{x}</button>)}</div>}
       <div className="fresh" style={{ margin: '2px 0 8px' }}>{rows.length} players · rest-of-season points = expected fantasy points over the games left (byes, injuries and playoff weeks included), under your league scoring.</div>
       {rows.length === 0 ? <Empty title="No players match these filters" body="Try clearing a filter." /> : (
         <div ref={parent} className="list-virt" role="list" aria-label="Free agents">

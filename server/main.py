@@ -411,7 +411,7 @@ def trade_view(c: cx.Ctx, ev: trading.TradeEval) -> dict:
 def trades_meta():
     c = get()
     s = c.hub.season
-    pl = lambda p: {"id": p.player_id, "name": p.name, "pos": p.position, "team": p.pro_team}
+    pl = lambda p: S.player(c, p)
     return {"teams": [{**S.fteam(c, t), "players": [pl(p) for p in sorted(t.roster, key=lambda p: -s.rank_key(p)) if p.position in trading.TRADEABLE]}
                       for t in c.snap.teams], "mine": [pl(p) for p in sorted(c.me.roster, key=lambda p: -s.rank_key(p)) if p.position in trading.TRADEABLE],
             "strategy": {"acceptThreshold": c.hub.strategy.accept_threshold}}
