@@ -29,7 +29,7 @@ code, pre, .tool { font-family: var(--f-mono); }
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 
 /* ================= shell ================= */
-.topbar { position: sticky; top: 0; z-index: 50; height: var(--topbar-h); display: flex; align-items: center; gap: 12px; padding: 0 24px; background: rgba(18, 18, 20, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+.topbar { position: sticky; top: 0; z-index: 50; height: var(--topbar-h); display: flex; align-items: center; gap: 12px; padding: 0 24px; background: rgba(18, 18, 20, .86); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; text-decoration: none; } .brand b { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
 .mark { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(180deg, var(--silver-hi), #b9bcc8); color: #121214; flex: none; } .mark .ms { font-size: 16px; vertical-align: 0; }
 .shell { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); gap: 24px; padding: 16px 24px 0; max-width: 1920px; margin: 0 auto; }
@@ -217,10 +217,10 @@ table.cmp { width: 100%; border-collapse: collapse; font-size: 14px; } table.cmp
 }
 :focus-visible { outline-color: var(--blue-hi); }
 ::selection { background: rgba(79, 124, 255, .35); }
-body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 420px; z-index: -1; pointer-events: none; background: radial-gradient(60% 100% at 50% -10%, rgba(47, 102, 234, .22), transparent 70%); }
+body::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 420px; z-index: -1; pointer-events: none; background: radial-gradient(60% 100% at 50% -10%, rgba(47, 102, 234, .22), transparent 70%); }
 @keyframes sheen { to { transform: translate3d(-50%, 0, 0); } }
 .shine { position: relative; isolation: isolate; overflow: hidden; }
-.shine::before { content: ""; position: absolute; z-index: -2; top: 0; bottom: 0; left: 0; width: 200%; background: var(--sheen); animation: sheen 9s linear infinite; will-change: transform; }
+.shine::before { content: ""; position: absolute; z-index: -2; top: 0; bottom: 0; left: 0; width: 200%; background: var(--sheen); animation: sheen 9s linear infinite; }
 .shine::after { content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, 0) 52%, rgba(0, 0, 0, .12)); }
 .btn.primary { background: var(--blue-1); color: #fff; border-color: rgba(169, 198, 255, .35); box-shadow: 0 6px 20px rgba(31, 85, 224, .35), inset 0 1px 0 rgba(255, 255, 255, .35); }
 .btn.primary:hover { background: var(--blue-1); border-color: rgba(169, 198, 255, .6); box-shadow: 0 8px 26px rgba(47, 102, 234, .5), inset 0 1px 0 rgba(255, 255, 255, .4); }
@@ -296,7 +296,7 @@ details.tune .form { margin: 0; padding: 16px; } details.tune summary .ms { tran
 @media (max-width: 800px) { .rosters { grid-template-columns: 1fr; } .tray { grid-template-columns: 1fr; } .tray .mid { transform: rotate(90deg); } .tiles { max-height: 320px; } }
 @media (prefers-reduced-motion: reduce) { .shine::before { animation: none !important; } .chip-p { animation: none; } }
 .btn.primary { position: relative; isolation: isolate; overflow: hidden; }
-.btn.primary::before { content: ""; position: absolute; z-index: -2; top: 0; bottom: 0; left: 0; width: 200%; background: var(--sheen); animation: sheen 9s linear infinite; will-change: transform; }
+.btn.primary::before { content: ""; position: absolute; z-index: -2; top: 0; bottom: 0; left: 0; width: 200%; background: var(--sheen); animation: sheen 9s linear infinite; }
 .btn.primary::after { content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, 0) 52%, rgba(0, 0, 0, .12)); }
 .btn.primary:disabled::before { animation-play-state: paused; }
 .setup .tile { background: var(--blue-1); color: #fff; }
@@ -322,3 +322,9 @@ details.tune .form { margin: 0; padding: 16px; } details.tune summary .ms { tran
 .board { background: linear-gradient(180deg, rgba(47, 102, 234, .14), rgba(47, 102, 234, 0) 60%), var(--surface); border-color: var(--accent-line); box-shadow: 0 16px 48px rgba(31, 85, 224, .14); }
 .board .big { background: linear-gradient(180deg, #fff 30%, #b6cdff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .rank { color: var(--blue-hi); }
+
+/* scroll performance: ambient animation pauses while the page is scrolling (set by main.tsx), long cards are skipped until near the viewport */
+html.scrolling .shine::before, html.scrolling .btn.primary::before { animation-play-state: paused; }
+html.scrolling .row, html.scrolling .tile, html.scrolling .rec, html.scrolling .pcard { transition: none; }
+.offer-wrap, .news, .msg, .rec { content-visibility: auto; contain-intrinsic-size: auto 220px; }
+.tiles { contain: content; }
