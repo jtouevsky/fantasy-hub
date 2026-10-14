@@ -8,11 +8,11 @@ export default function League() {
     <>
       <Section title="Standings" aside={`${d.count} teams · ${d.regWeeks}-game regular season`} />
       <div className="rows" role="list">{d.standings.map((t: any) => (
-        <div key={t.id} className="row" style={{ gridTemplateColumns: '28px minmax(0,1fr) 80px 70px 80px', background: t.me ? 'var(--wash)' : undefined }}>
+        <div key={t.id} className={`row ${t.me ? 'me' : ''}`} style={{ gridTemplateColumns: '28px minmax(0,1fr) 80px 70px 80px' }}>
           <span className="rank num">{t.standing}</span>
           <div className="who"><FAvatar t={t} size={40} /><div style={{ minWidth: 0 }}><div className="nm">{t.name} {t.me && <Chip kind="info">You</Chip>}</div><div className="sub">{t.owner}</div></div></div>
           <div className="stat"><b>{t.record}</b><small>Record</small></div><div className="stat hide-sm"><b>{t.pf}</b><small>PF</small></div>
-          <div className="stat hide-sm">{t.playoffPct ? <><b>{Math.round(t.playoffPct)}%</b><small>Playoffs</small></> : null}</div>
+          <div className="stat hide-sm">{t.playoffPct ? <><b>{Math.round(t.playoffPct)}%</b><small>Playoffs</small><div className="bar"><i style={{ width: `${Math.round(t.playoffPct)}%` }} /></div></> : null}</div>
         </div>))}</div>
       <Section title={`Week ${d.week} matchups`} aside="ESPN projections" />
       {d.matchups.length ? <div className="rows">{d.matchups.map((m: any, i: number) => (
