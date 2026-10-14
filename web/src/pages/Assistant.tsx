@@ -4,12 +4,19 @@ import { useApi, post, http, qc } from '../api'
 import { Chip, Icon, Notice, Empty, Skel } from '../ui'
 import { Markdown } from '../md'
 import { Spinner } from '../fx'
+import { Quick } from '../pick'
 
-const EXAMPLES: [string, string][] = [
-  ['Who should I start this week?', 'Who should I start this week and why?'],
-  ['Find me a trade', 'Scan the whole league for a trade that helps my lineup, slightly in my favor (about 60/40 in my value), that the other manager would plausibly accept. Show the offer ladder.'],
-  ['Any waiver moves?', 'Do I need any add/drop or streaming move this week? If not, say so.'],
-  ['Is anyone injured?', 'Is anyone on my team injured or on a bye, and what should I do?'],
+const CARDS: { icon: string; title: string; sub: string; prompt: string }[] = [
+  { icon: 'sports_football', title: 'Who should I start?', sub: 'Lineup calls for this week, with the reason for each.', prompt: 'Who should I start this week and why?' },
+  { icon: 'swap_horiz', title: 'Find me a trade', sub: 'A fair-for-you offer the other manager would plausibly accept.', prompt: 'Scan the whole league for a trade that helps my lineup, slightly in my favor (about 60/40 in my value), that the other manager would plausibly accept. Show the offer ladder.' },
+  { icon: 'person_add', title: 'Any waiver moves?', sub: 'Adds, drops and streaming, or a clear "no move needed".', prompt: 'Do I need any add/drop or streaming move this week? If not, say so.' },
+  { icon: 'medical_services', title: 'Injuries and byes', sub: 'Who is hurt or off this week, and what to do about it.', prompt: 'Is anyone on my team injured or on a bye, and what should I do?' },
+  { icon: 'sell', title: 'Who should I sell?', sub: 'Players priced above what their usage supports.', prompt: 'Which of my players should I sell high on, and who could I realistically get back?' },
+  { icon: 'insights', title: 'How is my season going?', sub: 'Standing, playoff odds and the biggest lever left.', prompt: 'Give me a short read on my season: standing, playoff odds, and the single biggest thing I can do to improve them.' },
+]
+const QUICK = [
+  { icon: 'sports_football', text: 'Start/sit', prompt: CARDS[0].prompt }, { icon: 'swap_horiz', text: 'Find a trade', prompt: CARDS[1].prompt }, { icon: 'person_add', text: 'Waivers', prompt: CARDS[2].prompt },
+  { icon: 'medical_services', text: 'Injuries', prompt: CARDS[3].prompt }, { icon: 'sell', text: 'Sell high', prompt: CARDS[4].prompt }, { icon: 'insights', text: 'My season', prompt: CARDS[5].prompt },
 ]
 
 export function MoveCards({ moves }: { moves: any }) {
@@ -58,14 +65,15 @@ export default function Assistant() {
         <span className="fresh">Uses {d.backend !== 'api' ? 'your Claude subscription' : 'the Anthropic API'} · reads your league through tools · read-only</span>
         <button className="btn sm" onClick={async () => { await http('/api/chat', { method: 'DELETE' }); qc.setQueryData(['/api/chat'], { ...d, messages: [] }) }}><Icon n="delete_sweep" /> Clear</button>
       </div>
-      {msgs.length === 0 && !pending && <><Empty title="Ask anything about your team" body="I read your roster, the waiver wire, trades and news through tools, and never invent stats." icon="forum" />
-        <div className="ex">{EXAMPLES.map(([l, p]) => <button key={l} className="pill" onClick={() => go(p)}>{l}</button>)}</div></>}
+      {msgs.length === 0 && !pending && <>
+        <div className="hero-ai"><span className="orb shine"><Icon n="auto_awesome" /></span><h2>What do you want to know?</h2><p>Tap a card or type below. I read your roster, the waiver wire, trades and news through tools, and never invent stats.</p></div>
+        <div className="prompt-grid">{CARDS.map((c) => <button key={c.title} type="button" className="pcard" onClick={() => go(c.prompt)}><Icon n={c.icon} /><b>{c.title}</b><small>{c.sub}</small></button>)}</div></>}
       {msgs.map((m, i) => <Msg key={i} m={m} />)}
       {pending && <><div className="msg user"><div className="t">{pending}</div></div><div className="msg"><Skel n={1} h={40} /><span className="fresh">Looking at your league...</span></div></>}
       {err && <Notice kind="warn" icon="smart_toy">{err}</Notice>}
       <div ref={end} style={{ height: 70 }} />
-      <div className="chatbar"><form onSubmit={(e) => { e.preventDefault(); go(prompt) }}>
-        <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask about your lineup, waivers, trades, injuries..." aria-label="Ask the assistant" />
+      <div className="chatbar">{msgs.length > 0 && !pending && <Quick items={QUICK} onPick={(p) => go(p)} />}<form onSubmit={(e) => { e.preventDefault(); go(prompt) }}>
+        <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask anything: lineup, waivers, a trade idea, injuries..." aria-label="Ask the assistant" />
         <button className={`btn primary icon ${send.isPending ? "busy" : ""}`} type="submit" aria-label="Send" disabled={send.isPending}>{send.isPending ? <Spinner /> : <Icon n="arrow_upward" />}</button></form></div>
     </>
   )

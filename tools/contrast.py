@@ -36,6 +36,12 @@ def pairs():
         out += [(f"text on {s}", P["text"], P[s], 4.5), (f"muted text on {s}", P["muted"], P[s], 4.5), (f"silver text on {s}", P["silver"], P[s], 4.5)]
     out += [("muted text on hover wash", P["muted"], over("#ececf0", .1, P["surface"]), 4.5), ("active nav text (bright silver) on its highlight", P["silver_hi"], over("#ececf0", .1, P["surface"]), 4.5)]
     out += [("near-black text on silver button (top)", "#121214", "#e6e8ef", 4.5), ("near-black text on silver button (bottom)", "#121214", "#b9bcc8", 4.5)]
+    for stop in ("#0a2f9e", "#1f55e0", "#2f66ea"):
+        out.append((f"white text on blue sheen stop {stop}", "#ffffff", stop, 4.5))
+    for s2 in ("bg", "surface", "raised"):
+        out.append((f"accent blue text on {s2}", "#a9c6ff", P[s2], 4.5))
+    sel = over("#2f66ea", .26, P["bg"])
+    out += [("accent text on selected tile", "#a9c6ff", sel, 4.5), ("text on selected tile", P["text"], sel, 4.5), ("muted text on selected tile", P["muted"], sel, 4.5)]
     for k, tint in (("good", P["good"]), ("warn", P["warn"]), ("bad", P["bad"])):
         out += [(f"{k} text on its tint over surface", P[k], over(tint, .12, P["surface"]), 4.5), (f"{k} text on surface", P[k], P["surface"], 4.5)]
     out.append(("placeholder text on input", "#7a7a84", P["bg"], 3.0))

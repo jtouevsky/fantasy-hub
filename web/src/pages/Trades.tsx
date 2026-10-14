@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApi, post, qc } from '../api'
 import { Spinner } from '../fx'
-import { AskAI, Avatar, Chip, Empty, FAvatar, Icon, Notice, Section, Skel, NflTag, TagChips, useActions } from '../ui'
+import { Avatar, Chip, Empty, FAvatar, Icon, Notice, Section, Skel, NflTag, TagChips, useActions } from '../ui'
+import { Quick, RosterPicker, Seg, Switch, TeamPicker, Tray, toggle } from '../pick'
 
 const POS = ['QB', 'RB', 'WR', 'TE']
 const ME: Record<string, [string, string]> = { good: ['good', 'thumb_up'], marginal: ['warn', 'balance'], no: ['bad', 'thumb_down'] }
@@ -54,34 +55,38 @@ function Offer({ t, k }: { t: any; k: string }) {
       </div>
       {pitchOpen && <div className="field"><label>Pitch (edit, then send it yourself in ESPN). Nothing is sent automatically.</label><textarea rows={5} defaultValue={t.pitch} /></div>}
       {logOpen && <div className="form"><div className="field"><label>What did he say?</label><select value={resp} onChange={(e) => setResp(e.target.value)}>{['accepted', 'rejected', 'countered', 'no response'].map((x) => <option key={x}>{x}</option>)}</select></div>
-        <div className="field"><label>Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. wants a RB back" /></div><button className="btn primary" onClick={save}><Icon n="check" /> Save</button></div>}
+        <div className="field"><label>Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. wants a RB back" /></div><button className="btn primary shine" onClick={save}><Icon n="check" /> Save</button></div>}
     </div>
   )
 }
 
-function PosPills({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
-  return <div className="field"><label>{label}</label><div className="pills" role="group" aria-label={label}>{POS.map((p) => <button type="button" key={p} aria-pressed={value.includes(p)} className={`pill ${value.includes(p) ? 'on' : ''}`} onClick={() => onChange(value.includes(p) ? value.filter((x) => x !== p) : [...value, p])}>{p}</button>)}</div></div>
-}
-
-function MultiSel({ label, options, value, onChange, placeholder }: { label: string; options: { v: any; l: string }[]; value: any[]; onChange: (v: any[]) => void; placeholder?: string }) {
-  return (
-    <div className="field"><label>{label}</label>
-      <select multiple value={value.map(String)} onChange={(e) => onChange([...e.target.selectedOptions].map((o) => (isNaN(Number(o.value)) ? o.value : Number(o.value))))} aria-label={label}>
-        {options.map((o) => <option key={o.v} value={String(o.v)}>{o.l}</option>)}</select>
-      {value.length === 0 && placeholder && <small className="fresh">{placeholder}</small>}</div>
-  )
-}
+const MODES = ['Find me a trade', 'Evaluate a deal', 'Negotiation log']
+const ASK = [
+  { icon: 'person_search', text: 'Who is most likely to accept a trade?', prompt: 'Which managers in my league are most likely to accept a trade right now, and what do they need? Use the trade tools.' },
+  { icon: 'sell', text: 'Best sell-high on my team', prompt: 'Which of my players should I sell high on, and who could I realistically get back? Show the offer ladder.' },
+  { icon: 'trending_up', text: 'Upgrade my weakest starter', prompt: 'Find me a trade that upgrades my weakest starting spot, slightly in my favor, that the other manager would plausibly accept.' },
+  { icon: 'shield', text: 'Trade for the playoffs', prompt: 'Find me a trade that helps my lineup most in the fantasy playoff weeks, and tell me what it costs now.' },
+]
 
 export default function Trades() {
   const { data: meta, isLoading } = useApi<any>('/api/trades/meta')
-  const [mode, setMode] = useState('Find me a trade')
+  const [mode, setMode] = useState(MODES[0])
+  const { askAI } = useActions()
   return (
     <>
-      <div className="pills" role="tablist">{['Find me a trade', 'Evaluate a deal', 'Negotiation log'].map((m) => <button key={m} className={`pill ${mode === m ? 'on' : ''}`} onClick={() => setMode(m)}>{m}</button>)}</div>
-      {isLoading || !meta ? <Skel n={3} h={80} /> : mode === 'Find me a trade' ? <Find meta={meta} /> : mode === 'Evaluate a deal' ? <Evaluate meta={meta} /> : <Negotiations meta={meta} />}
+      <div className="ask-strip"><Seg label="Trade tools" value={mode} onChange={setMode} options={[{ v: MODES[0], l: <><Icon n="auto_awesome" />Find me a trade</> }, { v: MODES[1], l: <><Icon n="balance" />Evaluate a deal</> }, { v: MODES[2], l: <><Icon n="history" />Negotiation log</> }]} /></div>
+      <Quick items={ASK} onPick={(prompt, text) => askAI(prompt, text)} />
+      {isLoading || !meta ? <Skel n={3} h={80} /> : mode === MODES[0] ? <Find meta={meta} /> : mode === MODES[1] ? <Evaluate meta={meta} /> : <Negotiations meta={meta} />}
     </>
   )
 }
+
+const FIND_IDEAS = [
+  { icon: 'trending_up', text: 'Find me a WR without giving up an RB' },
+  { icon: 'sell', text: 'Sell high on my RB for a receiver' },
+  { icon: 'shield', text: 'Upgrade my TE, about 60/40' },
+  { icon: 'swap_horiz', text: 'Find me a QB, no RBs' },
+]
 
 function Find({ meta }: { meta: any }) {
   const [text, setText] = useState('')
@@ -90,30 +95,41 @@ function Find({ meta }: { meta: any }) {
   const [split, setSplit] = useState(60)
   const [want, setWant] = useState<string[]>([]), [nogive, setNogive] = useState<string[]>([])
   const [need, setNeed] = useState(''), [loss, setLoss] = useState(false), [notes, setNotes] = useState<string[]>([])
-  const read = async () => {
-    const r = await post('/api/trades/parse', { text })
-    setPartner(r.partner ?? ''); setOffering(r.offering); setSplit(r.split); setWant(r.want); setNogive(r.nogive); setNeed(r.need || ''); setLoss(r.loss); setNotes(r.notes)
+  const [reading, setReading] = useState(false)
+  const read = async (t = text) => {
+    if (!t.trim() || reading) return
+    setReading(true)
+    try {
+      const r = await post('/api/trades/parse', { text: t })
+      setPartner(r.partner ?? ''); setOffering(r.offering); setSplit(r.split); setWant(r.want); setNogive(r.nogive); setNeed(r.need || ''); setLoss(r.loss); setNotes(r.notes)
+    } finally { setReading(false) }
   }
   const body = { partner: partner === '' ? null : partner, offering, split, want, nogive, need, loss, max: 6 }
   const search = useQuery({ queryKey: ['/api/trades/search', body], queryFn: () => post('/api/trades/search', body), staleTime: 5 * 60_000, placeholderData: (p) => p })
   const others = meta.teams.filter((t: any) => !t.me)
+  const togglePos = (list: string[], set: (v: string[]) => void, p: string) => set(list.includes(p) ? list.filter((x) => x !== p) : [...list, p])
   return (
     <>
-      <div className="fresh" style={{ margin: '10px 0 6px' }}>Describe what you want in plain English, e.g. <i>find me a WR for the playoffs without giving up an RB, about 60/40</i>. I turn it into the settings below so you can correct anything before searching.</div>
-      <div style={{ display: 'flex', gap: 8 }}><input className="big-in" style={{ flex: 1, borderRadius: 999 }} type="text" value={text} placeholder="e.g. sell high on my RB for a receiver; no QBs" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && read()} aria-label="Trade request" />
-        <button className="btn" onClick={read}><Icon n="auto_fix_high" /> Read it</button></div>
-      {notes.length > 0 && <div className="ctxrow" style={{ marginTop: 8 }}><Chip icon="psychology">How I read that</Chip>{notes.map((n) => <Chip key={n}>{n}</Chip>)}</div>}
-      <div className="form">
-        <div className="field"><label>Trade with</label><select value={partner} onChange={(e) => setPartner(e.target.value === '' ? '' : Number(e.target.value))}><option value="">Anyone in the league</option>{others.map((t: any) => <option key={t.id} value={t.id}>{t.first ? `${t.first} · ` : ''}{t.name}</option>)}</select></div>
-        <MultiSel label="Players I'd move (optional)" options={meta.mine.map((p: any) => ({ v: p.id, l: `${p.name} · ${p.pos} · ${p.team}` }))} value={offering} onChange={setOffering} placeholder="Let the search choose" />
-        <div className="field"><label>My-value split: {split}</label><input type="range" min={50} max={70} value={split} onChange={(e) => setSplit(Number(e.target.value))} aria-label="My-value split" /></div>
-      </div>
-      <div className="form">
-        <PosPills label="Ask for (none = any)" value={want} onChange={setWant} />
-        <PosPills label="Won't give" value={nogive} onChange={setNogive} />
-        <div className="field"><label>Must help my</label><select value={need} onChange={(e) => setNeed(e.target.value)}><option value="">No requirement</option>{POS.map((p) => <option key={p}>{p}</option>)}</select></div>
-        <label className="toggle"><input type="checkbox" checked={loss} onChange={(e) => setLoss(e.target.checked)} /> Sell / rebuild (lineup may dip)</label>
-      </div>
+      <form className="find-box" onSubmit={(e) => { e.preventDefault(); read() }}>
+        <input type="text" value={text} placeholder="Tell me what you want, e.g. find me a WR for the playoffs without giving up an RB" onChange={(e) => setText(e.target.value)} aria-label="Trade request" />
+        <button className={`btn primary shine ${reading ? 'busy' : ''}`} type="submit" disabled={reading}>{reading ? <Spinner /> : <Icon n="auto_fix_high" />} Find it</button>
+      </form>
+      <div style={{ height: 12 }} />
+      <Quick items={FIND_IDEAS} onPick={(t) => { setText(t); read(t) }} />
+      {notes.length > 0 && <div className="ctxrow" style={{ marginBottom: 12 }}><Chip icon="psychology">How I read that</Chip>{notes.map((n) => <Chip key={n}>{n}</Chip>)}</div>}
+      <span className="lbl2" style={{ marginTop: 4 }}>Trade with</span>
+      <TeamPicker teams={others} value={partner} onChange={setPartner} any="Anyone" />
+      <details className="tune"><summary><Icon n="chevron_right" /> Fine-tune the search{(want.length || nogive.length || need || loss || offering.length) ? <Chip kind="ai">Customized</Chip> : null}</summary>
+        <div className="form">
+          <div><span className="lbl2" style={{ marginTop: 0 }}>Ask for (none = any)</span><div className="seg" role="group" aria-label="Ask for">{POS.map((p) => <button type="button" key={p} aria-pressed={want.includes(p)} onClick={() => togglePos(want, setWant, p)}>{p}</button>)}</div></div>
+          <div><span className="lbl2" style={{ marginTop: 0 }}>I won't give</span><div className="seg" role="group" aria-label="Won't give">{POS.map((p) => <button type="button" key={p} aria-pressed={nogive.includes(p)} onClick={() => togglePos(nogive, setNogive, p)}>{p}</button>)}</div></div>
+          <div><span className="lbl2" style={{ marginTop: 0 }}>Must help my</span><Seg label="Must help my" value={need} onChange={setNeed} options={[{ v: '', l: 'Anything' }, ...POS.map((p) => ({ v: p, l: p }))]} /></div>
+          <div><span className="lbl2" style={{ marginTop: 0 }}>My-value split: {split}</span><input type="range" min={50} max={70} value={split} onChange={(e) => setSplit(Number(e.target.value))} aria-label="My-value split" style={{ width: '100%' }} /></div>
+          <Switch on={loss} onChange={setLoss}>Sell / rebuild (lineup may dip)</Switch>
+        </div>
+        <div style={{ padding: '0 16px 16px' }}><span className="lbl2" style={{ marginTop: 0 }}>Players I'd move (optional, tap to pick)</span>
+          <RosterPicker title="My roster" players={meta.mine} selected={offering} onToggle={(id) => setOffering(toggle(offering, id))} /></div>
+      </details>
       <div className="ctxrow">{search.data?.constraints.map((x: string) => <Chip key={x}>{x}</Chip>)}</div>
       {search.isLoading ? <><Notice icon="hourglass_top">Scanning every team for the cheapest offer that works...</Notice><Skel n={2} h={200} /></> :
         !search.data?.results.length ? <Notice kind="warn" icon="search_off">No trade clears both questions (good for you AND plausible for him) under these settings. Loosen the split, drop a position filter, or allow a sell/rebuild move.</Notice> :
@@ -122,19 +138,35 @@ function Find({ meta }: { meta: any }) {
   )
 }
 
+/** Both rosters side by side plus the deal tray; shared by Evaluate and the negotiation log. */
+function DealBuilder({ meta, partner, setPartner, give, get, setGive, setGet, giveLabel, getLabel }: { meta: any; partner: number; setPartner: (n: number) => void; give: number[]; get: number[]; setGive: (v: number[]) => void; setGet: (v: number[]) => void; giveLabel?: string; getLabel?: string }) {
+  const others = meta.teams.filter((t: any) => !t.me)
+  const other = others.find((t: any) => t.id === partner)
+  const me = meta.teams.find((t: any) => t.me)
+  const byId = (list: any[], ids: number[]) => ids.map((id) => list.find((p) => p.id === id)).filter(Boolean)
+  return (
+    <>
+      <span className="lbl2" style={{ marginTop: 0 }}>Trade with</span>
+      <TeamPicker teams={others} value={partner} onChange={(v) => { if (v !== '') { setPartner(v); setGet([]) } }} />
+      <Tray give={byId(meta.mine, give)} get={byId(other?.players || [], get)} giveLabel={giveLabel} getLabel={getLabel} onRemoveGive={(id) => setGive(give.filter((x) => x !== id))} onRemoveGet={(id) => setGet(get.filter((x) => x !== id))} onClear={() => { setGive([]); setGet([]) }} />
+      <div className="rosters">
+        <RosterPicker title="Your roster" team={me} players={meta.mine} selected={give} onToggle={(id) => setGive(toggle(give, id))} />
+        <RosterPicker title={other?.first ? `${other.first}'s roster` : other?.name || 'Their roster'} team={other} players={other?.players || []} selected={get} onToggle={(id) => setGet(toggle(get, id))} />
+      </div>
+    </>
+  )
+}
+
 function Evaluate({ meta }: { meta: any }) {
   const others = meta.teams.filter((t: any) => !t.me)
   const [partner, setPartner] = useState<number>(others[0]?.id)
   const [give, setGive] = useState<number[]>([]), [get, setGet] = useState<number[]>([])
-  const other = others.find((t: any) => t.id === partner)
   const ev = useQuery({ queryKey: ['/api/trades/evaluate', partner, give, get], queryFn: () => post('/api/trades/evaluate', { partner, give, get }), enabled: give.length > 0 && get.length > 0, staleTime: 5 * 60_000 })
-  useEffect(() => setGet([]), [partner])
   return (
     <>
-      <div className="form"><div className="field"><label>Trade with</label><select value={partner} onChange={(e) => setPartner(Number(e.target.value))}>{others.map((t: any) => <option key={t.id} value={t.id}>{t.first ? `${t.first} · ` : ''}{t.name}</option>)}</select></div></div>
-      <div className="form"><MultiSel label="You give" options={meta.mine.map((p: any) => ({ v: p.id, l: `${p.name} · ${p.pos} · ${p.team}` }))} value={give} onChange={setGive} />
-        <MultiSel label="You get" options={(other?.players || []).map((p: any) => ({ v: p.id, l: `${p.name} · ${p.pos} · ${p.team}` }))} value={get} onChange={setGet} /></div>
-      {give.length && get.length ? (ev.isLoading ? <Skel n={1} h={240} /> : ev.data ? <Offer t={ev.data} k="eval" /> : null) : <Empty title="Pick players on both sides" body="I'll answer two separate questions: should you offer it, and would he accept." icon="swap_horiz" />}
+      <DealBuilder meta={meta} partner={partner} setPartner={setPartner} give={give} get={get} setGive={setGive} setGet={setGet} />
+      <div style={{ height: 16 }} />
+      {give.length && get.length ? (ev.isLoading ? <Skel n={1} h={240} /> : ev.data ? <Offer t={ev.data} k="eval" /> : null) : <Empty title="Tap players on both sides" body="I'll answer two separate questions: should you offer it, and would he accept." icon="swap_horiz" />}
     </>
   )
 }
@@ -145,20 +177,18 @@ function Negotiations({ meta }: { meta: any }) {
   const [give, setGive] = useState<number[]>([]), [get, setGet] = useState<number[]>([]), [resp, setResp] = useState('accepted'), [note, setNote] = useState('')
   const { toast } = useActions()
   const { data: n } = useApi<any>(`/api/trades/negotiations?team=${team}`, { stale: 0 })
-  const other = others.find((t: any) => t.id === team)
   const save = async () => { await post('/api/trades/negotiations', { team, give, get, response: resp, note }); qc.invalidateQueries({ queryKey: [`/api/trades/negotiations?team=${team}`] }); setGive([]); setGet([]); setNote(''); toast('Logged.') }
   return (
     <>
-      <div className="form"><div className="field"><label>Manager</label><select value={team} onChange={(e) => setTeam(Number(e.target.value))}>{others.map((t: any) => <option key={t.id} value={t.id}>{t.first ? `${t.first} · ` : ''}{t.name}</option>)}</select></div></div>
       {n && <><div className="ctxrow"><FAvatar t={n.team} size={28} /><b>{n.team.name}</b><Chip icon="sports_score">{n.team.record}</Chip><Chip icon="swap_horiz">{n.profile.trades_this_season} trades this season</Chip><Chip icon="person_add">{n.profile.adds} adds · {n.profile.drops} drops</Chip>
         <Chip icon="history">Logged: {n.profile.logged.accepted} yes · {n.profile.logged.rejected} no · {n.profile.logged.countered} counter</Chip></div>
         <Notice icon="psychology">Tendency: {n.profile.tendency_text}.</Notice></>}
       <Section title="Add an answer" aside="what he actually said" />
-      <div className="form"><MultiSel label="I offered" options={meta.mine.map((p: any) => ({ v: p.id, l: `${p.name} · ${p.pos} · ${p.team}` }))} value={give} onChange={setGive} />
-        <MultiSel label="I asked for" options={(other?.players || []).map((p: any) => ({ v: p.id, l: `${p.name} · ${p.pos} · ${p.team}` }))} value={get} onChange={setGet} /></div>
-      <div className="form"><div className="field"><label>He said</label><select value={resp} onChange={(e) => setResp(e.target.value)}>{['accepted', 'rejected', 'countered', 'no response'].map((x) => <option key={x}>{x}</option>)}</select></div>
+      <DealBuilder meta={meta} partner={team} setPartner={setTeam} give={give} get={get} setGive={setGive} setGet={setGet} giveLabel="I offered" getLabel="I asked for" />
+      <div className="form" style={{ alignItems: 'end' }}>
+        <div><span className="lbl2" style={{ marginTop: 0 }}>He said</span><Seg label="He said" value={resp} onChange={setResp} options={['accepted', 'rejected', 'countered', 'no response'].map((x) => ({ v: x, l: x[0].toUpperCase() + x.slice(1) }))} /></div>
         <div className="field"><label>Note</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional, e.g. 'would do it if I add a WR3'" /></div>
-        <button className="btn primary" disabled={!(give.length && get.length)} onClick={save}><Icon n="check" /> Save</button></div>
+        <button className="btn primary shine" disabled={!(give.length && get.length)} onClick={save}><Icon n="check" /> Save</button></div>
       <Section title="History" />
       {!n?.rows.length ? <Empty title="Nothing logged with this manager yet" body="Log what he says to your offers; confirmed answers override the estimate for that same ask." icon="history" /> :
         n.rows.map((r: any) => <div key={r.id} className="neg"><Chip kind={{ accepted: 'good', rejected: 'bad', countered: 'warn' }[r.response as string] || ''}>{r.response[0].toUpperCase() + r.response.slice(1)}</Chip><span><b>{r.give}</b> for <b>{r.get}</b>{r.note ? ` · ${r.note}` : ''}</span><small>{r.ts}</small></div>)}
